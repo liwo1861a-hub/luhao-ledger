@@ -2,12 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:open_filex/open_filex.dart';
 import '../models/ledger_models.dart';
 import '../models/app_settings.dart';
 import '../services/ledger_provider.dart';
-import '../services/database_service.dart';
+import '../services/backup_service.dart';
 import '../services/update_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -18,44 +16,48 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _currentVersion = '1.0.6';
+  late TextEditingController _apiKeyCtrl;
+  late TextEditingController _endpointCtrl;
+  late TextEditingController _modelCtrl;
+  late TextEditingController _promptCtrl;
+  late TextEditingController _cfUrlCtrl;
+  late TextEditingController _cfTokenCtrl;
+
   bool _isCheckingUpdate = false;
+  String _currentVersion = '1.0.7';
+  UpdateInfo? _latestUpdateInfo;
   double _downloadProgress = 0.0;
   bool _isDownloading = false;
-
-  late TextEditingController _endpointCtrl;
-  late TextEditingController _apiKeyCtrl;
-  late TextEditingController _modelCtrl;
-  late TextEditingController _backupPathCtrl;
-  late TextEditingController _promptCtrl;
 
   @override
   void initState() {
     super.initState();
-    _loadVersion();
-    final s = context.read<LedgerProvider>().settings;
-    _endpointCtrl = TextEditingController(text: s.apiEndpoint);
-    _apiKeyCtrl = TextEditingController(text: s.apiKey);
-    _modelCtrl = TextEditingController(text: s.modelName);
-    _backupPathCtrl = TextEditingController(text: s.customBackupPath);
-    _promptCtrl = TextEditingController(text: s.customPrompt);
+    final settings = context.read<LedgerProvider>().settings;
+    _apiKeyCtrl = TextEditingController(text: settings.apiKey);
+    _endpointCtrl = TextEditingController(text: settings.apiEndpoint);
+    _modelCtrl = TextEditingController(text: settings.modelName);
+    _promptCtrl = TextEditingController(text: settings.customPrompt);
+    _cfUrlCtrl = TextEditingController(text: settings.cloudflareWorkerUrl);
+    _cfTokenCtrl = TextEditingController(text: settings.cloudflareAuthToken);
+    _loadCurrentVersion();
+  }
+
+  Future<void> _loadCurrentVersion() async {
+    final meta = await UpdateService.instance.getLocalVersion();
+    setState(() {
+      _currentVersion = meta['version'] ?? '1.0.7';
+    });
   }
 
   @override
   void dispose() {
-    _endpointCtrl.dispose();
     _apiKeyCtrl.dispose();
+    _endpointCtrl.dispose();
     _modelCtrl.dispose();
-    _backupPathCtrl.dispose();
     _promptCtrl.dispose();
+    _cfUrlCtrl.dispose();
+    _cfTokenCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadVersion() async {
-    final meta = await UpdateService.instance.getLocalVersion();
-    setState(() {
-      _currentVersion = meta['version'] ?? '1.0.2';
-    });
   }
 
   @override
@@ -66,16 +68,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('系统设置与规则', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('规则与系统设置', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 成员别名管理卡片
+          // 称谓别名映射管理
           _buildAliasSection(context, provider, aliases),
           const SizedBox(height: 16),
 
-          // AI 模型配置卡片（默认 Gemini / gemini-3.7-flash）
+          // ☁️ Cloudflare 财务系统云端双向同步卡片
+          _buildCloudflareSyncSection(context, provider, settings),
+          const SizedBox(height: 16),
+
+          // AI 模型与接口配置
           _buildAiConfigSection(context, provider, settings),
           const SizedBox(height: 16),
 
@@ -155,6 +161,164 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ☁️ Cloudflare 财务系统云端同步卡片
+  Widget _buildCloudflareSyncSection(BuildContext context, LedgerProvider provider, AppSettings settings) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.cloud_sync, color: Colors.indigo),
+                    SizedBox(width: 8),
+                    Text('Cloudflare 财务系统同步', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: settings.cloudflareWorkerUrl.isNotEmpty ? Colors.green.shade50 : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    settings.cloudflareWorkerUrl.isNotEmpty ? '已配置' : '未连接',
+                    style: TextStyle(
+                      color: settings.cloudflareWorkerUrl.isNotEmpty ? Colors.green.shade700 : Colors.grey,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '支持与您的 Cloudflare Worker (财务管理 v6.3.1) 进行双向无缝实时数据同步。',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const Divider(height: 16),
+
+            // Worker 域名输入
+            TextField(
+              controller: _cfUrlCtrl,
+              decoration: InputDecoration(
+                labelText: 'Cloudflare Worker 部署地址',
+                hintText: '如 https://your-finance.workers.dev',
+                prefixIcon: const Icon(Icons.link, color: Colors.indigo),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                isDense: true,
+              ),
+              onChanged: (v) {
+                settings.cloudflareWorkerUrl = v.trim();
+                provider.saveSettings(settings);
+              },
+            ),
+            const SizedBox(height: 10),
+
+            // Auth Token 输入
+            TextField(
+              controller: _cfTokenCtrl,
+              decoration: InputDecoration(
+                labelText: '同步授权 Token (Authorization)',
+                hintText: '默认 auth_lz_mode',
+                prefixIcon: const Icon(Icons.key, color: Colors.indigo),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                isDense: true,
+              ),
+              onChanged: (v) {
+                settings.cloudflareAuthToken = v.trim();
+                provider.saveSettings(settings);
+              },
+            ),
+            const SizedBox(height: 8),
+
+            // 自动静默同步开关
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('记账后自动推送到 Cloudflare', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              subtitle: const Text('本地每次新增或修改账目后，自动静默同步到云端', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              value: settings.autoSyncCloudflare,
+              activeColor: Colors.indigo,
+              onChanged: (val) {
+                setState(() => settings.autoSyncCloudflare = val);
+                provider.saveSettings(settings);
+              },
+            ),
+            const SizedBox(height: 8),
+
+            // 两个核心双向同步操作按钮
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: provider.isSyncingCloudflare
+                        ? null
+                        : () async {
+                            final res = await provider.pullFromCloudflare();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(res.message),
+                                  backgroundColor: res.success ? Colors.green : Colors.redAccent,
+                                ),
+                              );
+                            }
+                          },
+                    icon: const Icon(Icons.cloud_download, size: 16),
+                    label: const Text('从云端拉取导入', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: provider.isSyncingCloudflare
+                        ? null
+                        : () async {
+                            final res = await provider.pushToCloudflare();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(res.message),
+                                  backgroundColor: res.success ? Colors.green : Colors.redAccent,
+                                ),
+                              );
+                            }
+                          },
+                    icon: const Icon(Icons.cloud_upload, size: 16),
+                    label: const Text('推送到云端覆盖', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAiConfigSection(BuildContext context, LedgerProvider provider, AppSettings settings) {
     return Card(
       elevation: 2,
@@ -178,94 +342,96 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(8)),
                   child: Text(
-                    settings.aiProvider.toUpperCase(),
-                    style: TextStyle(color: Colors.indigo.shade800, fontWeight: FontWeight.bold, fontSize: 11),
+                    settings.aiProvider == 'gemini' ? 'Gemini 3.7 Flash' : settings.aiProvider.toUpperCase(),
+                    style: const TextStyle(color: Colors.indigo, fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            const Text('默认使用 Google Gemini (gemini-3.7-flash)，所有地址、密钥、模型均可自由修改并持久化保存。', style: TextStyle(fontSize: 12, color: Colors.grey)),
-            const Divider(height: 20),
+            const Divider(height: 16),
 
+            // AI 服务商切换
             DropdownButtonFormField<String>(
               value: settings.aiProvider,
               decoration: const InputDecoration(
-                labelText: 'AI 引擎模式 (可修改)',
+                labelText: '默认 AI 服务商',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
               items: const [
-                DropdownMenuItem(value: 'gemini', child: Text('Google Gemini API (默认推荐)')),
-                DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek API (深度求索)')),
-                DropdownMenuItem(value: 'openai', child: Text('OpenAI / 兼容通道 (如通义/硅基流动/Ollama)')),
-                DropdownMenuItem(value: 'offline_rules', child: Text('本地智能规则引擎 (完全免费离线)')),
+                DropdownMenuItem(value: 'gemini', child: Text('Google Gemini (默认推荐 gemini-3.7-flash)')),
+                DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek 官方 (deepseek-chat)')),
+                DropdownMenuItem(value: 'openai', child: Text('OpenAI / 兼容通道 (GPT-4o)')),
+                DropdownMenuItem(value: 'custom', child: Text('自定义兼容 API 协议')),
+                DropdownMenuItem(value: 'offline_rules', child: Text('纯离线智能规则引擎 (无需联网与Key)')),
               ],
               onChanged: (val) {
                 if (val != null) {
-                  settings.aiProvider = val;
-                  if (val == 'gemini') {
-                    settings.apiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-                    settings.modelName = 'gemini-3.7-flash';
-                  } else if (val == 'deepseek') {
-                    settings.apiEndpoint = 'https://api.deepseek.com/v1/chat/completions';
-                    settings.modelName = 'deepseek-chat';
-                  } else if (val == 'openai') {
-                    settings.apiEndpoint = 'https://api.openai.com/v1/chat/completions';
-                    settings.modelName = 'gpt-4o-mini';
-                  }
-                  _endpointCtrl.text = settings.apiEndpoint;
-                  _modelCtrl.text = settings.modelName;
+                  setState(() {
+                    settings.aiProvider = val;
+                    if (val == 'gemini') {
+                      _endpointCtrl.text = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+                      _modelCtrl.text = 'gemini-3.7-flash';
+                      settings.apiEndpoint = _endpointCtrl.text;
+                      settings.modelName = _modelCtrl.text;
+                    } else if (val == 'deepseek') {
+                      _endpointCtrl.text = 'https://api.deepseek.com/chat/completions';
+                      _modelCtrl.text = 'deepseek-chat';
+                      settings.apiEndpoint = _endpointCtrl.text;
+                      settings.modelName = _modelCtrl.text;
+                    }
+                  });
                   provider.saveSettings(settings);
                 }
               },
             ),
-
             const SizedBox(height: 12),
-            TextField(
-              controller: _endpointCtrl,
-              decoration: const InputDecoration(
-                labelText: 'API Endpoint 服务接口地址 (可自定义)',
-                hintText: '如 https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              onChanged: (v) {
-                settings.apiEndpoint = v.trim();
-                provider.saveSettings(settings);
-              },
-            ),
 
-            const SizedBox(height: 12),
-            TextField(
-              controller: _apiKeyCtrl,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'API Key 密钥 (可填入您的 Key)',
-                hintText: '填入 AI 平台的 API 密钥',
-                border: OutlineInputBorder(),
-                isDense: true,
+            if (settings.aiProvider != 'offline_rules') ...[
+              TextField(
+                controller: _endpointCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'API 接口 Endpoint',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (v) {
+                  settings.apiEndpoint = v;
+                  provider.saveSettings(settings);
+                },
               ),
-              onChanged: (v) {
-                settings.apiKey = v.trim();
-                provider.saveSettings(settings);
-              },
-            ),
+              const SizedBox(height: 12),
 
-            const SizedBox(height: 12),
-            TextField(
-              controller: _modelCtrl,
-              decoration: const InputDecoration(
-                labelText: '模型名称 Model (默认 gemini-3.7-flash，可自定义)',
-                hintText: '如 gemini-3.7-flash / deepseek-chat / gpt-4o',
-                border: OutlineInputBorder(),
-                isDense: true,
+              TextField(
+                controller: _modelCtrl,
+                decoration: const InputDecoration(
+                  labelText: '模型名称 (Model Name)',
+                  hintText: '如 gemini-3.7-flash, deepseek-chat',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (v) {
+                  settings.modelName = v;
+                  provider.saveSettings(settings);
+                },
               ),
-              onChanged: (v) {
-                settings.modelName = v.trim();
-                provider.saveSettings(settings);
-              },
-            ),
+              const SizedBox(height: 12),
+
+              TextField(
+                controller: _apiKeyCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'API Key 密钥',
+                  hintText: '输入您的 API Key',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (v) {
+                  settings.apiKey = v;
+                  provider.saveSettings(settings);
+                },
+              ),
+            ],
           ],
         ),
       ),
@@ -308,7 +474,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
             const Text(
-              '可自定义 AI 识别提取时的 System Prompt。支持保留 {alias_rules} 标签以自动注入成员别名字典。',
+              '可自定义 AI 识别提取时的 System Prompt。支持保留 {alias_rules} 和 {target_year} 标签。',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const Divider(height: 16),
@@ -349,54 +515,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Text('全量信息备份与自定义下载', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             const Text(
-              '一键打包备份所有信息（每日账目、成员支出明细、特殊情况备注、人名别名映射、系统配置），下载存储地址完全支持自定义设置。',
+              '一键将本地所有单日明细、收支数据、别名配置导出为标准 JSON 或 CSV 表格备份。',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
-            const Divider(height: 20),
+            const Divider(height: 16),
 
-            // 自定义下载与保存目录配置
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _backupPathCtrl,
-                    decoration: const InputDecoration(
-                      labelText: '自定义备份下载存储目录',
-                      hintText: '默认存储在应用文档目录，可点击右侧选择',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    onChanged: (v) {
-                      settings.customBackupPath = v.trim();
-                      provider.saveSettings(settings);
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  icon: const Icon(Icons.folder_open),
-                  tooltip: '选择自定义文件夹',
-                  onPressed: () async {
-                    String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
-                    if (selectedDirectory != null) {
-                      _backupPathCtrl.text = selectedDirectory;
+            // 自定义备份路径
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.folder_open, color: Colors.indigo),
+              title: const Text('自定义备份保存目录', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              subtitle: Text(
+                settings.customBackupPath.isNotEmpty ? settings.customBackupPath : '默认应用文档目录 (点击右侧设置)',
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              trailing: ElevatedButton(
+                style: ElevatedButton.styleFrom(visualDensity: VisualDensity.compact),
+                onPressed: () async {
+                  String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+                  if (selectedDirectory != null) {
+                    setState(() {
                       settings.customBackupPath = selectedDirectory;
-                      await provider.saveSettings(settings);
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('已设定自定义备份下载目录: $selectedDirectory')),
-                        );
-                      }
-                    }
-                  },
-                ),
-              ],
+                    });
+                    provider.saveSettings(settings);
+                  }
+                },
+                child: const Text('选择路径'),
+              ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
 
-            // 导出备份与导入还原按钮
             Row(
               children: [
                 Expanded(
@@ -404,27 +554,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.indigo,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                    onPressed: () => _exportAllData(context, settings),
+                    onPressed: () => _exportJsonBackup(context, settings.customBackupPath),
                     icon: const Icon(Icons.download, size: 18),
-                    label: const Text('备份下载全部信息'),
+                    label: const Text('导出全量备份 (JSON)'),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade700,
+                      foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                    onPressed: () => _importData(context, provider),
-                    icon: const Icon(Icons.upload_file, size: 18),
-                    label: const Text('导入备份数据'),
+                    onPressed: () => _exportCsvBackup(context, settings.customBackupPath),
+                    icon: const Icon(Icons.table_view, size: 18),
+                    label: const Text('导出表格 (CSV)'),
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _importBackup(context, provider),
+                icon: const Icon(Icons.upload_file),
+                label: const Text('从外部 JSON 备份文件恢复数据'),
+              ),
             ),
           ],
         ),
@@ -448,49 +608,164 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     Icon(Icons.system_update, color: Colors.indigo),
                     SizedBox(width: 8),
-                    Text('软件更新', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text('软件版本与在线更新', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   ],
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8)),
-                  child: Text('v$_currentVersion', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                ),
+                Text('v$_currentVersion', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
               ],
             ),
-            const SizedBox(height: 8),
-            const Text('基于永久固定签名构建，支持应用内一键下载更新并就地覆盖安装。', style: TextStyle(fontSize: 12, color: Colors.grey)),
-            const Divider(height: 20),
+            const Divider(height: 16),
 
             if (_isDownloading) ...[
               LinearProgressIndicator(value: _downloadProgress > 0 ? _downloadProgress : null),
               const SizedBox(height: 8),
-              Center(child: Text('正在下载新版本: ${(_downloadProgress * 100).toStringAsFixed(1)}%')),
-            ] else
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: _isCheckingUpdate ? null : _checkForUpdate,
-                  icon: _isCheckingUpdate
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.refresh),
-                  label: Text(_isCheckingUpdate ? '正在检查最新版本...' : '检查软件更新'),
+              Center(
+                child: Text('正在下载新版安装包: ${(_downloadProgress * 100).toStringAsFixed(1)}%'),
+              ),
+            ] else if (_latestUpdateInfo != null && _latestUpdateInfo!.hasUpdate) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.amber.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('发现新版本: v${_latestUpdateInfo!.latestVersion}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.brown)),
+                    const SizedBox(height: 4),
+                    Text(_latestUpdateInfo!.changelog, style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => _startDownloadAndInstall(_latestUpdateInfo!.apkDownloadUrl),
+                      child: const Text('立即下载并就地升级'),
+                    ),
+                  ],
                 ),
               ),
+            ] else ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _isCheckingUpdate ? null : _checkUpdate,
+                  icon: _isCheckingUpdate ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.refresh),
+                  label: Text(_isCheckingUpdate ? '正在检查...' : '检查软件更新'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
+  Future<void> _checkUpdate() async {
+    setState(() => _isCheckingUpdate = true);
+    try {
+      final info = await UpdateService.instance.checkForUpdate();
+      setState(() {
+        _latestUpdateInfo = info;
+        _isCheckingUpdate = false;
+      });
+      if (!info.hasUpdate && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前已经是最新版本！')),
+        );
+      }
+    } catch (e) {
+      setState(() => _isCheckingUpdate = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('检查更新失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _startDownloadAndInstall(String url) async {
+    setState(() {
+      _isDownloading = true;
+      _downloadProgress = 0.0;
+    });
+
+    await UpdateService.instance.downloadAndInstallApk(
+      url,
+      onProgress: (p) => setState(() => _downloadProgress = p),
+      onError: (err) {
+        setState(() => _isDownloading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(err), backgroundColor: Colors.redAccent),
+        );
+      },
+    );
+  }
+
+  Future<void> _exportJsonBackup(BuildContext context, String customPath) async {
+    try {
+      final path = await BackupService.instance.exportFullBackupJson(customPath: customPath);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('全量 JSON 备份已保存至:\n$path'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportCsvBackup(BuildContext context, String customPath) async {
+    try {
+      final path = await BackupService.instance.exportCsvSpreadsheet(customPath: customPath);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CSV 统计表格已保存至:\n$path'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _importBackup(BuildContext context, LedgerProvider provider) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (result != null && result.files.single.path != null) {
+        final count = await BackupService.instance.importBackupJson(File(result.files.single.path!));
+        await provider.reloadStatsAndRecords();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('成功恢复 $count 条记账明细！'), backgroundColor: Colors.green),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('恢复失败: $e')),
+        );
+      }
+    }
+  }
+
   void _openAddAliasDialog(BuildContext context, LedgerProvider provider) {
     final aliasCtrl = TextEditingController();
-    final realNameCtrl = TextEditingController(text: '坤茹');
-
+    final realCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -500,161 +775,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             TextField(
               controller: aliasCtrl,
-              decoration: const InputDecoration(labelText: '称谓别名（如：我、老妈、爸等）', border: OutlineInputBorder()),
+              decoration: const InputDecoration(labelText: '聊天中出现的称谓 (如 "我", "妈", "爸")', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: realNameCtrl,
-              decoration: const InputDecoration(labelText: '真实对应人名（如：坤茹、红章等）', border: OutlineInputBorder()),
+              controller: realCtrl,
+              decoration: const InputDecoration(labelText: '真实入账人名 (如 "坤茹", "红章")', border: OutlineInputBorder()),
             ),
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           ElevatedButton(
-            onPressed: () async {
-              if (aliasCtrl.text.trim().isNotEmpty && realNameCtrl.text.trim().isNotEmpty) {
-                await provider.saveAlias(aliasCtrl.text.trim(), realNameCtrl.text.trim());
-                if (mounted) Navigator.pop(ctx);
+            onPressed: () {
+              if (aliasCtrl.text.isNotEmpty && realCtrl.text.isNotEmpty) {
+                provider.saveAlias(aliasCtrl.text, realCtrl.text);
+                Navigator.pop(ctx);
               }
             },
-            child: const Text('保存'),
+            child: const Text('确定保存'),
           ),
         ],
       ),
     );
-  }
-
-  Future<void> _exportAllData(BuildContext context, AppSettings settings) async {
-    try {
-      final jsonStr = await DatabaseService.instance.exportToJson();
-
-      String targetDir;
-      if (settings.customBackupPath.isNotEmpty && Directory(settings.customBackupPath).existsSync()) {
-        targetDir = settings.customBackupPath;
-      } else {
-        final dir = await getExternalStorageDirectory() ?? await getTemporaryDirectory();
-        targetDir = dir.path;
-      }
-
-      final fileName = 'smart_ledger_full_backup_${DateTime.now().millisecondsSinceEpoch}.json';
-      final file = File('$targetDir/$fileName');
-      await file.writeAsString(jsonStr);
-
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('全量信息备份成功'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('已将所有账目、成员明细、特殊备注、别名与配置导出！'),
-                const SizedBox(height: 10),
-                Text('保存路径:\n${file.path}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.indigo)),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('确定')),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  OpenFilex.open(file.path);
-                },
-                child: const Text('打开文件'),
-              ),
-            ],
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('备份导出失败: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  Future<void> _importData(BuildContext context, LedgerProvider provider) async {
-    try {
-      final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['json']);
-      if (result != null && result.files.single.path != null) {
-        final file = File(result.files.single.path!);
-        final content = await file.readAsString();
-        await DatabaseService.instance.importFromJson(content);
-        await provider.init();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('全量数据导入并同步成功！'), backgroundColor: Colors.green),
-          );
-        }
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _checkForUpdate() async {
-    setState(() => _isCheckingUpdate = true);
-    final update = await UpdateService.instance.checkForUpdate();
-    setState(() => _isCheckingUpdate = false);
-
-    if (!mounted) return;
-
-    if (update.hasUpdate) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text('发现新版本 v${update.latestVersion}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('发布日期: ${update.releaseDate}'),
-              const SizedBox(height: 8),
-              const Text('更新日志:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text(update.changelog),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('稍后再说')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
-              onPressed: () {
-                Navigator.pop(ctx);
-                _startDownload(update.apkDownloadUrl);
-              },
-              child: const Text('立即更新'),
-            ),
-          ],
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('当前已是最新版本！'), backgroundColor: Colors.green),
-      );
-    }
-  }
-
-  void _startDownload(String url) {
-    setState(() {
-      _isDownloading = true;
-      _downloadProgress = 0.0;
-    });
-
-    UpdateService.instance.downloadAndInstallApk(
-      url,
-      onProgress: (p) => setState(() => _downloadProgress = p),
-      onError: (err) {
-        setState(() => _isDownloading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err), backgroundColor: Colors.red));
-      },
-    ).then((_) {
-      setState(() => _isDownloading = false);
-    });
   }
 }

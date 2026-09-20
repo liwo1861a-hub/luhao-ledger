@@ -149,6 +149,16 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('${provider.selectedYear}年 ${provider.selectedMonthNum}月 账目明细', style: const TextStyle(fontWeight: FontWeight.bold)),
+        actions: [
+          if (provider.settings.cloudflareWorkerUrl.isNotEmpty)
+            IconButton(
+              icon: provider.isSyncingCloudflare
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.indigo))
+                  : const Icon(Icons.cloud_sync, color: Colors.indigo),
+              tooltip: 'Cloudflare 云端同步',
+              onPressed: () => _showCloudflareSyncModal(context, provider),
+            ),
+        ],
       ),
       body: provider.isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -733,6 +743,67 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
     showDialog(
       context: context,
       builder: (_) => EditLedgerDialog(initialRecord: record),
+    );
+  }
+
+  void _showCloudflareSyncModal(BuildContext context, LedgerProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.cloud_sync, color: Colors.indigo, size: 24),
+                SizedBox(width: 8),
+                Text('Cloudflare 财务系统云端同步', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '当前已连接: ${provider.settings.cloudflareWorkerUrl}',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const Divider(height: 20),
+            ListTile(
+              leading: const CircleAvatar(backgroundColor: Color(0xFFE6FFFA), child: Icon(Icons.cloud_download, color: Colors.teal)),
+              title: const Text('从 Cloudflare 拉取最新数据', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              subtitle: const Text('将网页版的所有月份与收支明细导入覆盖到手机', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final res = await provider.pullFromCloudflare();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(res.message), backgroundColor: res.success ? Colors.green : Colors.redAccent),
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const CircleAvatar(backgroundColor: Color(0xFFEEF2FF), child: Icon(Icons.cloud_upload, color: Colors.indigo)),
+              title: const Text('将手机本地账目推送到 Cloudflare', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              subtitle: const Text('将手机记账 App 中的全部数据同步到网页端', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final res = await provider.pushToCloudflare();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(res.message), backgroundColor: res.success ? Colors.green : Colors.redAccent),
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
     );
   }
 }

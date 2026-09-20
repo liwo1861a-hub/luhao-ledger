@@ -7,11 +7,13 @@ import '../models/app_settings.dart';
 import 'database_service.dart';
 import 'ai_parser_service.dart';
 import 'ocr_service.dart';
+import 'cloudflare_sync_service.dart';
 
 class LedgerProvider extends ChangeNotifier {
   final DatabaseService _db = DatabaseService.instance;
   final AiParserService _ai = AiParserService.instance;
   final OcrService _ocr = OcrService.instance;
+  final CloudflareSyncService _cfSync = CloudflareSyncService.instance;
 
   List<DailyLedger> _dailyRecords = [];
   List<DailyLedger> get dailyRecords => _dailyRecords;
@@ -47,6 +49,9 @@ class LedgerProvider extends ChangeNotifier {
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
+
+  bool _isSyncingCloudflare = false;
+  bool get isSyncingCloudflare => _isSyncingCloudflare;
 
   LedgerProvider() {
     init();
@@ -161,6 +166,10 @@ class LedgerProvider extends ChangeNotifier {
     }
     await _refreshAvailableYearsAndMonths();
     await reloadStatsAndRecords();
+
+    if (_settings.autoSyncCloudflare && _settings.cloudflareWorkerUrl.isNotEmpty) {
+      _triggerSilentCloudflarePush();
+    }
   }
 
   Future<void> saveBatchRecords(List<DailyLedger> records) async {
@@ -177,12 +186,54 @@ class LedgerProvider extends ChangeNotifier {
     }
     await _refreshAvailableYearsAndMonths();
     await reloadStatsAndRecords();
+
+    if (_settings.autoSyncCloudflare && _settings.cloudflareWorkerUrl.isNotEmpty) {
+      _triggerSilentCloudflarePush();
+    }
   }
 
   Future<void> deleteRecord(String id) async {
     await _db.deleteDailyRecord(id);
     await _refreshAvailableYearsAndMonths();
     await reloadStatsAndRecords();
+
+    if (_settings.autoSyncCloudflare && _settings.cloudflareWorkerUrl.isNotEmpty) {
+      _triggerSilentCloudflarePush();
+    }
+  }
+
+  void _triggerSilentCloudflarePush() {
+    _cfSync.pushToCloudflare(_settings).then((res) {
+      // 静默后台同步完成
+    }).catchError((_) {});
+  }
+
+  /// 从 Cloudflare Worker 拉取同步数据
+  Future<CloudflareSyncResult> pullFromCloudflare() async {
+    _isSyncingCloudflare = true;
+    notifyListeners();
+
+    final res = await _cfSync.pullFromCloudflare(_settings);
+    if (res.success) {
+      await _refreshAvailableYearsAndMonths();
+      await reloadStatsAndRecords();
+    }
+
+    _isSyncingCloudflare = false;
+    notifyListeners();
+    return res;
+  }
+
+  /// 推送本地数据到 Cloudflare Worker
+  Future<CloudflareSyncResult> pushToCloudflare() async {
+    _isSyncingCloudflare = true;
+    notifyListeners();
+
+    final res = await _cfSync.pushToCloudflare(_settings);
+
+    _isSyncingCloudflare = false;
+    notifyListeners();
+    return res;
   }
 
   Future<void> saveAlias(String alias, String realName) async {

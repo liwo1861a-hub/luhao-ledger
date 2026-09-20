@@ -8,6 +8,9 @@ class AppSettings {
   bool enableAutoAlias;
   bool autoRecognizeNames;
   String customBackupPath; // 自定义备份与下载保存路径
+  String cloudflareWorkerUrl; // Cloudflare Worker 财务系统地址
+  String cloudflareAuthToken; // Cloudflare 认证 Token (默认 auth_lz_mode)
+  bool autoSyncCloudflare; // 是否自动同步 Cloudflare
 
   static const String defaultSystemPrompt = '''你是一个智能财务记账助手。请从用户输入的记账文本或微信聊天记录中提取结构化财务数据，并严格输出纯 JSON 格式。
 【核心硬性规则】：
@@ -41,6 +44,9 @@ class AppSettings {
     this.enableAutoAlias = true,
     this.autoRecognizeNames = true,
     this.customBackupPath = '',
+    this.cloudflareWorkerUrl = '',
+    this.cloudflareAuthToken = 'auth_lz_mode',
+    this.autoSyncCloudflare = false,
   }) : customPrompt = customPrompt ?? defaultSystemPrompt;
 
   Map<String, dynamic> toJson() => {
@@ -53,6 +59,9 @@ class AppSettings {
     'enableAutoAlias': enableAutoAlias,
     'autoRecognizeNames': autoRecognizeNames,
     'customBackupPath': customBackupPath,
+    'cloudflareWorkerUrl': cloudflareWorkerUrl,
+    'cloudflareAuthToken': cloudflareAuthToken,
+    'autoSyncCloudflare': autoSyncCloudflare,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -65,6 +74,9 @@ class AppSettings {
     enableAutoAlias: json['enableAutoAlias'] == 1 || json['enableAutoAlias'] == true,
     autoRecognizeNames: json['autoRecognizeNames'] == 1 || json['autoRecognizeNames'] == true,
     customBackupPath: json['customBackupPath'] ?? '',
+    cloudflareWorkerUrl: json['cloudflareWorkerUrl'] ?? '',
+    cloudflareAuthToken: json['cloudflareAuthToken'] ?? 'auth_lz_mode',
+    autoSyncCloudflare: json['autoSyncCloudflare'] == 1 || json['autoSyncCloudflare'] == true,
   );
 
   AppSettings copyWith({
@@ -77,6 +89,9 @@ class AppSettings {
     bool? enableAutoAlias,
     bool? autoRecognizeNames,
     String? customBackupPath,
+    String? cloudflareWorkerUrl,
+    String? cloudflareAuthToken,
+    bool? autoSyncCloudflare,
   }) {
     return AppSettings(
       aiProvider: aiProvider ?? this.aiProvider,
@@ -88,6 +103,9 @@ class AppSettings {
       enableAutoAlias: enableAutoAlias ?? this.enableAutoAlias,
       autoRecognizeNames: autoRecognizeNames ?? this.autoRecognizeNames,
       customBackupPath: customBackupPath ?? this.customBackupPath,
+      cloudflareWorkerUrl: cloudflareWorkerUrl ?? this.cloudflareWorkerUrl,
+      cloudflareAuthToken: cloudflareAuthToken ?? this.cloudflareAuthToken,
+      autoSyncCloudflare: autoSyncCloudflare ?? this.autoSyncCloudflare,
     );
   }
 }
