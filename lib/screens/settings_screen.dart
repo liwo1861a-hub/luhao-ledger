@@ -18,7 +18,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _currentVersion = '1.0.3';
+  String _currentVersion = '1.0.4';
   bool _isCheckingUpdate = false;
   double _downloadProgress = 0.0;
   bool _isDownloading = false;

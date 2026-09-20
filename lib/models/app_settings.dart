@@ -9,24 +9,24 @@ class AppSettings {
   bool autoRecognizeNames;
   String customBackupPath; // 自定义备份与下载保存路径
 
-  static const String defaultSystemPrompt = '''你是一个智能财务记账助手。请从用户输入的记账文本或聊天记录中提取结构化财务数据，并严格输出纯 JSON 格式。
+  static const String defaultSystemPrompt = '''你是一个智能财务记账助手。请从用户输入的记账文本或微信聊天记录中提取结构化财务数据，并严格输出纯 JSON 格式。
 【核心规则】：
-1. 别名与人名映射：{alias_rules}。其他如 "红章"、"烨文"、"坤艳" 等需自动识别为人名并记录其独立支出。
+1. 别名与人名映射：{alias_rules}。其他如 "红章"、"烨文"、"坤艳" 等需自动识别为人名并记录其独立支出金额。
 2. 提取单日总收入（如 "收入 473.5元"）。
-3. 提取每个人具体的支出项（人名、金额、分类、备注），严禁将总支出汇总计入单人。
-4. 提取日期（格式 YYYY-MM-DD，若只有月日则默认当前年份）。
-5. 提取每日特殊情况备注（如转账记录、手写小票说明、特殊事件等）。
+3. 提取每个人具体的支出项（人名、支出金额），严禁将总支出汇总计入单人。
+4. 提取日期（格式 YYYY-MM-DD，若只有月日则按指定年份 {target_year} 拼接）。
+5. 类别固定为 "日常支出"，备注保持为空（由用户自行在界面中填写特殊情况备注）。
 
 【输出 JSON Schema 示例】：
 {
   "date": "2023-09-19",
   "totalIncome": 473.5,
-  "specialNote": "向爸转账已被接收",
+  "specialNote": "",
   "expenses": [
-    {"personName": "红章", "amount": 333.5, "category": "食材采购", "note": "9月19日红章支出"},
-    {"personName": "坤茹", "amount": 6.5, "category": "零星开支", "note": "我支出 6.5元"},
-    {"personName": "烨文", "amount": 22.0, "category": "日常支出", "note": "烨文支出22元"},
-    {"personName": "坤艳", "amount": 6.0, "category": "日常支出", "note": "坤艳支出6元"}
+    {"personName": "红章", "amount": 333.5, "category": "日常支出", "note": ""},
+    {"personName": "坤茹", "amount": 6.5, "category": "日常支出", "note": ""},
+    {"personName": "烨文", "amount": 22.0, "category": "日常支出", "note": ""},
+    {"personName": "坤艳", "amount": 6.0, "category": "日常支出", "note": ""}
   ]
 }
 只输出纯 JSON，不要包含任何 markdown 标签或多余解释。''';

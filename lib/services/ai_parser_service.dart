@@ -14,17 +14,18 @@ class AiParserService {
     receiveTimeout: const Duration(seconds: 45),
   ));
 
-  /// 解析文本或OCR内容为 DailyLedger 对象
-  Future<DailyLedger> parseLedgerContent(String rawText, {String? imagePath}) async {
+  /// 解析文本或OCR内容为 DailyLedger 对象（支持指定年份）
+  Future<DailyLedger> parseLedgerContent(String rawText, {String? imagePath, int? defaultYear}) async {
     final settings = await DatabaseService.instance.getSettings();
     final aliasRules = await DatabaseService.instance.getAliasRules();
+    final year = defaultYear ?? DateTime.now().year;
 
     // 如果配置了在线 AI 且有 API Key，优先尝试在线 AI 解析；否则或失败时自动降级至高精度本地智能规则引擎
     if (settings.aiProvider != 'offline_rules' &&
         settings.apiKey.trim().isNotEmpty &&
         settings.apiEndpoint.trim().isNotEmpty) {
       try {
-        final aiResult = await _parseWithLlm(rawText, settings, aliasRules, imagePath: imagePath);
+        final aiResult = await _parseWithLlm(rawText, settings, aliasRules, imagePath: imagePath, defaultYear: year);
         if (aiResult != null) {
           return aiResult;
         }
@@ -34,11 +35,11 @@ class AiParserService {
     }
 
     // 本地智能规则解析器（100% 离线、零外部依赖）
-    return _parseWithLocalRules(rawText, aliasRules, imagePath: imagePath);
+    return _parseWithLocalRules(rawText, aliasRules, imagePath: imagePath, defaultYear: year);
   }
 
   /// 本地规则引擎高精度解析
-  DailyLedger _parseWithLocalRules(String text, List<AliasRule> aliases, {String? imagePath}) {
+  DailyLedger _parseWithLocalRules(String text, List<AliasRule> aliases, {String? imagePath, required int defaultYear}) {
     // 建立别名映射字典 (例如 "我" -> "坤茹", "妈" -> "坤茹")
     Map<String, String> aliasMap = {};
     for (var a in aliases) {
@@ -48,12 +49,11 @@ class AiParserService {
     if (!aliasMap.containsKey('我')) aliasMap['我'] = '坤茹';
     if (!aliasMap.containsKey('妈')) aliasMap['妈'] = '坤茹';
 
-    // 1. 提取日期
-    String extractedDate = _extractDate(text);
+    // 1. 提取日期（使用当前栏目的指定年份）
+    String extractedDate = _extractDate(text, defaultYear);
 
     // 2. 提取总收入
     double totalIncome = 0.0;
-    // 匹配 "收入 473.5元", "收入: 473.5", "进账473.5", "今日收入473.5元"
     final incomeRegex = RegExp(r'(?:今日)?(?:收入|入账|进账|营业额|收钱)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)', caseSensitive: false);
     final incomeMatch = incomeRegex.firstMatch(text);
     if (incomeMatch != null) {
@@ -63,44 +63,18 @@ class AiParserService {
     // 3. 提取各成员支出明细
     List<ExpenseItem> expenseItems = [];
     final lines = text.split(RegExp(r'[\r\n]+'));
-
-    // 专门用于过滤总支出汇总行的正则（如 "9月19日共支出 340元", "合计支出 340"）
     final summaryExpenseRegex = RegExp(r'(?:共支出|总支出|合计支出|共计支出|总计)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)');
-
-    List<String> specialNotes = [];
 
     for (var line in lines) {
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
 
-      // 如果是总支出汇总行，记录但不重复添加为单人支出
+      // 过滤总支出汇总行
       if (summaryExpenseRegex.hasMatch(trimmed)) {
         continue;
       }
 
-      // 提取特殊备注信息，如 "向爸转账 已被接收", "微信转账", "手写小票" 等
-      if (trimmed.contains('转账') ||
-          trimmed.contains('接收') ||
-          trimmed.contains('小票') ||
-          trimmed.contains('备注') ||
-          trimmed.contains('特殊') ||
-          trimmed.contains('客人') ||
-          trimmed.contains('下雨') ||
-          trimmed.contains('备菜') ||
-          trimmed.contains('调料')) {
-        // 如果这行不单纯是数字支出行，计入备注
-        if (!trimmed.contains('支出') && !trimmed.contains('收入')) {
-          specialNotes.add(trimmed);
-        }
-      }
-
-      // 匹配成员支出行，例如：
-      // "红章支出 333.5元"
-      // "9月19日红章支出 333.5元"
-      // "我支出 6.5元"
-      // "烨文支出22元"
-      // "坤艳支出6元"
-      // "张三 50元 买菜"
+      // 匹配成员支出行
       final expensePattern = RegExp(
         r'(?:(?:\d{1,2}月\d{1,2}日)?\s*)?([^\d\s,，.。:：]+?)(?:支出|花费|花了|用去|采购|出账)?\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:元|块|RMB)?(?:\s*(.*))?',
         caseSensitive: false,
@@ -110,57 +84,43 @@ class AiParserService {
       if (match != null) {
         String rawName = match.group(1)?.trim() ?? '';
         String amountStr = match.group(2)?.trim() ?? '';
-        String extraNote = match.group(3)?.trim() ?? '';
 
-        // 清洗人名中的无用前缀（如日期、"妈"发的消息前缀等）
+        // 清洗人名前缀
         rawName = rawName.replaceAll(RegExp(r'^\d{1,2}月\d{1,2}日'), '').trim();
         rawName = rawName.replaceAll(RegExp(r'^(?:妈|爸|微信|用户)[:：\s]*'), '').trim();
 
-        // 过滤掉非人名关键词
-        if (rawName == '共' ||
-            rawName == '总' ||
-            rawName == '合计' ||
-            rawName == '收入' ||
-            rawName == '入账' ||
-            rawName.isEmpty) {
+        if (rawName == '共' || rawName == '总' || rawName == '合计' || rawName == '收入' || rawName == '入账' || rawName.isEmpty) {
           continue;
         }
 
         double? amount = double.tryParse(amountStr);
         if (amount != null && amount > 0) {
-          // 应用别名映射：如果提取到的称谓在别名字典中（如 "我" -> "坤茹"），替换为真实人名
           String finalName = aliasMap[rawName] ?? rawName;
 
+          // 类别固定为日常支出，用户可在界面中自行选择修改
           expenseItems.add(ExpenseItem(
             personName: finalName,
             amount: amount,
-            category: _inferCategory(extraNote, trimmed),
-            note: extraNote.isNotEmpty ? extraNote : trimmed,
+            category: '日常支出',
+            note: '',
           ));
         }
       }
     }
 
-    // 如果文本中包含微信提示或特殊情况，整合进每日备注
-    String specialNoteResult = specialNotes.join('；');
-    if (specialNoteResult.isEmpty && text.contains('向爸转账')) {
-      specialNoteResult = '向爸转账已被接收';
-    }
-
+    // 备注不自动识别猜测，留空由用户自己输入
     return DailyLedger(
       date: extractedDate,
       totalIncome: totalIncome,
       expenses: expenseItems,
-      specialNote: specialNoteResult,
+      specialNote: '',
       rawText: text,
       imagePath: imagePath,
     );
   }
 
-  /// 提取日期（支持 "9月19日", "2023-09-19", "2023/09/19", "09-19" 等）
-  String _extractDate(String text) {
-    final now = DateTime.now();
-
+  /// 提取日期（使用所属栏目的目标年份）
+  String _extractDate(String text, int defaultYear) {
     // 匹配完整年月日：2023年9月19日 或 2023-09-19
     final fullDateRegex = RegExp(r'(\d{4})[年\-\/](\d{1,2})[月\-\/](\d{1,2})日?');
     final fullMatch = fullDateRegex.firstMatch(text);
@@ -171,53 +131,33 @@ class AiParserService {
       return DateFormat('yyyy-MM-dd').format(DateTime(y, m, d));
     }
 
-    // 匹配月日：9月19日 或 9-19 或 09/19
+    // 匹配月日：9月19日 或 9-19 或 09/19 -> 绑定到所属栏目的年份
     final monthDayRegex = RegExp(r'(\d{1,2})[月\-\/](\d{1,2})日?');
     final mdMatch = monthDayRegex.firstMatch(text);
     if (mdMatch != null) {
       int m = int.parse(mdMatch.group(1)!);
       int d = int.parse(mdMatch.group(2)!);
-      return DateFormat('yyyy-MM-dd').format(DateTime(now.year, m, d));
+      return DateFormat('yyyy-MM-dd').format(DateTime(defaultYear, m, d));
     }
 
-    // 默认返回当前日期
-    return DateFormat('yyyy-MM-dd').format(now);
+    // 默认返回当前年份月份日期
+    final now = DateTime.now();
+    return DateFormat('yyyy-MM-dd').format(DateTime(defaultYear, now.month, now.day));
   }
 
-  /// 自动推断支出类别
-  String _inferCategory(String extraNote, String fullLine) {
-    final combined = '$extraNote $fullLine';
-    if (combined.contains('菜') || combined.contains('肉') || combined.contains('蛋') || combined.contains('油') || combined.contains('米')) {
-      return '食材采购';
-    }
-    if (combined.contains('调料') || combined.contains('配料') || combined.contains('酱')) {
-      return '调料备料';
-    }
-    if (combined.contains('电') || combined.contains('水') || combined.contains('气') || combined.contains('房租')) {
-      return '水电租金';
-    }
-    if (combined.contains('餐具') || combined.contains('包装') || combined.contains('袋') || combined.contains('纸')) {
-      return '物料耗材';
-    }
-    if (combined.contains('工资') || combined.contains('人工')) {
-      return '员工薪资';
-    }
-    return '日常支出';
-  }
-
-  /// 在线 LLM 智能多模态/文本解析（支持自定义 AI 提示词）
+  /// 在线 LLM 智能多模态/文本解析
   Future<DailyLedger?> _parseWithLlm(
     String rawText,
     AppSettings settings,
     List<AliasRule> aliases, {
     String? imagePath,
+    required int defaultYear,
   }) async {
     String aliasPrompt = aliases.map((a) => "'${a.alias}' -> '${a.realName}'").join(', ');
     if (aliasPrompt.isEmpty) {
       aliasPrompt = "'我' 映射为 '坤茹', '妈' 映射为 '坤茹'";
     }
 
-    // 使用用户自定义提示词，并将 {alias_rules} 占位符替换为当前别名规则
     String systemPrompt = settings.customPrompt.isNotEmpty
         ? settings.customPrompt
         : AppSettings.defaultSystemPrompt;
@@ -226,6 +166,10 @@ class AiParserService {
       systemPrompt = systemPrompt.replaceAll('{alias_rules}', aliasPrompt);
     } else {
       systemPrompt = '$systemPrompt\n【别名映射规则】: $aliasPrompt';
+    }
+
+    if (systemPrompt.contains('{target_year}')) {
+      systemPrompt = systemPrompt.replaceAll('{target_year}', defaultYear.toString());
     }
 
     final response = await _dio.post(
@@ -256,16 +200,22 @@ class AiParserService {
             personName: item['personName'] ?? '未命名',
             amount: (item['amount'] as num?)?.toDouble() ?? 0.0,
             category: item['category'] ?? '日常支出',
-            note: item['note'] ?? '',
+            note: '',
           ));
         }
       }
 
+      String date = jsonMap['date'] ?? DateFormat('yyyy-MM-dd').format(DateTime(defaultYear, 1, 1));
+      // 保证年份对齐
+      if (date.length >= 4 && !date.startsWith('$defaultYear') && !rawText.contains(RegExp(r'\d{4}'))) {
+        date = '$defaultYear${date.substring(4)}';
+      }
+
       return DailyLedger(
-        date: jsonMap['date'] ?? DateFormat('yyyy-MM-dd').format(DateTime.now()),
+        date: date,
         totalIncome: (jsonMap['totalIncome'] as num?)?.toDouble() ?? 0.0,
         expenses: items,
-        specialNote: jsonMap['specialNote'] ?? '',
+        specialNote: '', // 备注不自动识别，由用户自己填写
         rawText: rawText,
         imagePath: imagePath,
       );

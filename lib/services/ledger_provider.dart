@@ -15,6 +15,12 @@ class LedgerProvider extends ChangeNotifier {
   List<DailyLedger> _dailyRecords = [];
   List<DailyLedger> get dailyRecords => _dailyRecords;
 
+  int _selectedYear = DateTime.now().year;
+  int get selectedYear => _selectedYear;
+
+  List<int> _availableYears = [];
+  List<int> get availableYears => _availableYears;
+
   List<String> _availableMonths = [];
   List<String> get availableMonths => _availableMonths;
 
@@ -46,10 +52,7 @@ class LedgerProvider extends ChangeNotifier {
 
     _settings = await _db.getSettings();
     _aliasRules = await _db.getAliasRules();
-    _availableMonths = await _db.getAvailableMonths();
-    if (_availableMonths.isNotEmpty && !_availableMonths.contains(_selectedMonth)) {
-      _selectedMonth = _availableMonths.first;
-    }
+    await _refreshAvailableYearsAndMonths();
 
     await reloadStatsAndRecords();
 
@@ -57,8 +60,51 @@ class LedgerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _refreshAvailableYearsAndMonths() async {
+    final allMonths = await _db.getAvailableMonths();
+    Set<int> years = {DateTime.now().year, 2025, 2024, 2023};
+    for (var m in allMonths) {
+      if (m.length >= 4) {
+        final y = int.tryParse(m.substring(0, 4));
+        if (y != null) years.add(y);
+      }
+    }
+    _availableYears = years.toList()..sort((a, b) => b.compareTo(a));
+
+    if (!_availableYears.contains(_selectedYear)) {
+      _selectedYear = _availableYears.first;
+    }
+
+    _availableMonths = allMonths.where((m) => m.startsWith('$_selectedYear-')).toList();
+    if (_availableMonths.isEmpty) {
+      _availableMonths = ['$_selectedYear-01'];
+    }
+    if (!_availableMonths.contains(_selectedMonth)) {
+      _selectedMonth = _availableMonths.first;
+    }
+  }
+
+  Future<void> setSelectedYear(int year) async {
+    _selectedYear = year;
+    _selectedMonth = '$_selectedYear-${_selectedMonth.split('-').last}';
+    await _refreshAvailableYearsAndMonths();
+    await reloadStatsAndRecords();
+  }
+
+  Future<void> addCustomYear(int year) async {
+    if (!_availableYears.contains(year)) {
+      _availableYears.add(year);
+      _availableYears.sort((a, b) => b.compareTo(a));
+    }
+    await setSelectedYear(year);
+  }
+
   Future<void> setSelectedMonth(String month) async {
     _selectedMonth = month;
+    if (month.length >= 4) {
+      final y = int.tryParse(month.substring(0, 4));
+      if (y != null) _selectedYear = y;
+    }
     await reloadStatsAndRecords();
   }
 
@@ -66,7 +112,6 @@ class LedgerProvider extends ChangeNotifier {
     _dailyRecords = await _db.getRecordsByMonth(_selectedMonth);
     _monthlyStats = await _db.getMonthlyStats(_selectedMonth);
     _allTimeStats = await _db.getAllTimeStats();
-    _availableMonths = await _db.getAvailableMonths();
     _aliasRules = await _db.getAliasRules();
     notifyListeners();
   }
@@ -75,7 +120,10 @@ class LedgerProvider extends ChangeNotifier {
     await _db.saveDailyRecord(record);
     if (record.date.length >= 7) {
       _selectedMonth = record.date.substring(0, 7);
+      final y = int.tryParse(record.date.substring(0, 4));
+      if (y != null) _selectedYear = y;
     }
+    await _refreshAvailableYearsAndMonths();
     await reloadStatsAndRecords();
   }
 
@@ -85,12 +133,16 @@ class LedgerProvider extends ChangeNotifier {
     }
     if (records.isNotEmpty && records.first.date.length >= 7) {
       _selectedMonth = records.first.date.substring(0, 7);
+      final y = int.tryParse(records.first.date.substring(0, 4));
+      if (y != null) _selectedYear = y;
     }
+    await _refreshAvailableYearsAndMonths();
     await reloadStatsAndRecords();
   }
 
   Future<void> deleteRecord(String id) async {
     await _db.deleteDailyRecord(id);
+    await _refreshAvailableYearsAndMonths();
     await reloadStatsAndRecords();
   }
 
@@ -115,35 +167,39 @@ class LedgerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 单张图片自动处理：免费 OCR 提取后立即全自动 AI 理解整理
-  Future<DailyLedger> processImage(File imageFile) async {
+  /// 单张图片自动处理：免费 OCR 提取后立即全自动 AI 理解整理（绑定年份）
+  Future<DailyLedger> processImage(File imageFile, {int? year}) async {
+    final targetYear = year ?? _selectedYear;
     final ocrText = await _ocr.extractTextFromImage(imageFile);
-    return await _ai.parseLedgerContent(ocrText, imagePath: imageFile.path);
+    return await _ai.parseLedgerContent(ocrText, imagePath: imageFile.path, defaultYear: targetYear);
   }
 
-  /// 批量图片自动处理：循环执行 OCR 识别与 AI 自动结构化解析
+  /// 批量图片自动处理
   Future<List<DailyLedger>> processBatchImages(
     List<File> imageFiles, {
+    int? year,
     void Function(int current, int total, String status)? onProgress,
   }) async {
+    final targetYear = year ?? _selectedYear;
     List<DailyLedger> results = [];
     int total = imageFiles.length;
 
     for (int i = 0; i < total; i++) {
       final file = imageFiles[i];
       if (onProgress != null) {
-        onProgress(i + 1, total, '正在对第 ${i + 1}/$total 张图片执行 OCR 提取与 AI 理解...');
+        onProgress(i + 1, total, '正在识别第 ${i + 1}/$total 张图片并自动 AI 整理...');
       }
       try {
-        final ledger = await processImage(file);
+        final ledger = await processImage(file, year: targetYear);
         results.add(ledger);
       } catch (_) {}
     }
     return results;
   }
 
-  /// 智能解析纯文本或聊天记录
-  Future<DailyLedger> processText(String text) async {
-    return await _ai.parseLedgerContent(text);
+  /// 智能解析纯文本或聊天记录（绑定年份）
+  Future<DailyLedger> processText(String text, {int? year}) async {
+    final targetYear = year ?? _selectedYear;
+    return await _ai.parseLedgerContent(text, defaultYear: targetYear);
   }
 }

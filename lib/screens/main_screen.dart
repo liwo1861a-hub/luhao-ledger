@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'daily_ledger_screen.dart';
 import 'statistics_screen.dart';
-import 'smart_ocr_screen.dart';
 import 'settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -17,7 +16,6 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _pages = const [
     DailyLedgerScreen(),
     StatisticsScreen(),
-    SmartOcrScreen(),
     SettingsScreen(),
   ];
 
@@ -36,17 +34,12 @@ class _MainScreenState extends State<MainScreen> {
           NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long, color: Colors.indigo),
-            label: '每日明细',
+            label: '明细与记账',
           ),
           NavigationDestination(
             icon: Icon(Icons.insights_outlined),
             selectedIcon: Icon(Icons.insights, color: Colors.indigo),
             label: '统计报表',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.document_scanner_outlined),
-            selectedIcon: Icon(Icons.document_scanner, color: Colors.indigo),
-            label: '智能识图',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),

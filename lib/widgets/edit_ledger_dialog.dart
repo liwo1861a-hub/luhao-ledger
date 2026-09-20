@@ -6,8 +6,9 @@ import '../services/ledger_provider.dart';
 
 class EditLedgerDialog extends StatefulWidget {
   final DailyLedger? initialRecord;
+  final int? defaultYear;
 
-  const EditLedgerDialog({super.key, this.initialRecord});
+  const EditLedgerDialog({super.key, this.initialRecord, this.defaultYear});
 
   @override
   State<EditLedgerDialog> createState() => _EditLedgerDialogState();
@@ -20,18 +21,26 @@ class _EditLedgerDialogState extends State<EditLedgerDialog> {
   late List<ExpenseItem> _expenses;
 
   final List<String> _commonPersons = ['红章', '坤茹', '烨文', '坤艳'];
-  final List<String> _commonCategories = ['食材采购', '调料备料', '零星开支', '水电租金', '物料耗材', '日常支出'];
+  final List<String> _commonCategories = ['日常支出', '食材采购', '调料备料', '零星开支', '水电租金', '物料耗材'];
 
   @override
   void initState() {
     super.initState();
     final rec = widget.initialRecord;
-    _date = rec?.date ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final now = DateTime.now();
+    final year = widget.defaultYear ?? now.year;
+
+    if (rec != null) {
+      _date = rec.date;
+    } else {
+      _date = DateFormat('yyyy-MM-dd').format(DateTime(year, now.month, now.day));
+    }
+
     _incomeCtrl = TextEditingController(text: rec != null ? rec.totalIncome.toString() : '');
     _specialNoteCtrl = TextEditingController(text: rec?.specialNote ?? '');
     _expenses = rec != null
         ? rec.expenses.map((e) => e.copyWith()).toList()
-        : [ExpenseItem(personName: '红章', amount: 0.0, category: '食材采购')];
+        : [ExpenseItem(personName: '红章', amount: 0.0, category: '日常支出')];
   }
 
   @override
@@ -112,8 +121,8 @@ class _EditLedgerDialogState extends State<EditLedgerDialog> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
-                          '各成员支出明细',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          '各成员支出明细 (可自选分类)',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                         Text(
                           '支出合计: ¥${_currentTotalExpense.toStringAsFixed(2)}',
@@ -138,7 +147,7 @@ class _EditLedgerDialogState extends State<EditLedgerDialog> {
                       child: TextButton.icon(
                         onPressed: () {
                           setState(() {
-                            _expenses.add(ExpenseItem(personName: '坤茹', amount: 0.0, category: '零星开支'));
+                            _expenses.add(ExpenseItem(personName: '坤茹', amount: 0.0, category: '日常支出'));
                           });
                         },
                         icon: const Icon(Icons.add_circle_outline),
@@ -147,13 +156,13 @@ class _EditLedgerDialogState extends State<EditLedgerDialog> {
                     ),
                     const SizedBox(height: 12),
 
-                    // 每日特殊情况备注
+                    // 每日特殊情况备注（纯用户自填）
                     TextField(
                       controller: _specialNoteCtrl,
                       maxLines: 2,
                       decoration: InputDecoration(
-                        labelText: '每日特殊情况备注 (选填)',
-                        hintText: '例如：向爸转账已被接收、下雨客流少、特殊进料等...',
+                        labelText: '每日特殊情况备注 (用户自主输入)',
+                        hintText: '例如：向爸转账已被接收、下雨客流少、进货调料等...',
                         prefixIcon: const Icon(Icons.note_alt_outlined, color: Colors.amber),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                         filled: true,
@@ -200,13 +209,13 @@ class _EditLedgerDialogState extends State<EditLedgerDialog> {
         children: [
           Row(
             children: [
-              // 成员姓名下拉/输入
+              // 成员姓名
               Expanded(
                 flex: 3,
                 child: DropdownButtonFormField<String>(
                   value: _commonPersons.contains(item.personName) ? item.personName : null,
                   decoration: const InputDecoration(
-                    labelText: '支出成员',
+                    labelText: '成员',
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                   ),
@@ -227,7 +236,7 @@ class _EditLedgerDialogState extends State<EditLedgerDialog> {
                   initialValue: item.amount > 0 ? item.amount.toString() : '',
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
-                    labelText: '支出金额(元)',
+                    labelText: '金额(元)',
                     isDense: true,
                     prefixText: '¥',
                     contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -240,13 +249,13 @@ class _EditLedgerDialogState extends State<EditLedgerDialog> {
                 ),
               ),
               const SizedBox(width: 8),
-              // 类别选择
+              // 类别自由选择
               Expanded(
                 flex: 3,
                 child: DropdownButtonFormField<String>(
                   value: _commonCategories.contains(item.category) ? item.category : '日常支出',
                   decoration: const InputDecoration(
-                    labelText: '分类',
+                    labelText: '分类(自选)',
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                   ),
@@ -293,7 +302,6 @@ class _EditLedgerDialogState extends State<EditLedgerDialog> {
     final income = double.tryParse(_incomeCtrl.text.trim()) ?? 0.0;
     final note = _specialNoteCtrl.text.trim();
 
-    // 过滤掉金额为0且无名字的行
     final validExpenses = _expenses.where((e) => e.personName.isNotEmpty && e.amount > 0).toList();
 
     final record = DailyLedger(
