@@ -1,15 +1,16 @@
 {
-  "version": "1.0.1",
-  "build_number": 2,
+  "version": "1.0.2",
+  "build_number": 3,
   "release_date": "2026-09-20",
   "app_name": "智能记账 (Smart Ledger)",
   "package_name": "com.liwo.luhao_ledger",
   "changelog": [
-    "🏷️ 应用名称精简更新为「智能记账」",
-    "🤖 默认 AI 引擎切换为 Google Gemini，默认模型升级为 gemini-3.7-flash，所有参数均支持自由修改与持久化",
-    "💾 全量数据一键备份下载：支持导出所有账目、成员明细、特殊情况备注、别名规则及配置",
-    "📂 自定义备份下载路径：支持用户自定义选择与配置数据备份的存储文件夹",
-    "🔒 永久固化签名无缝升级，支持 App 内直接检测并覆盖更新"
+    "🎨 焕新精美财务 App 启动图标与记账徽章设计",
+    "⚡ OCR 识别后全自动调用 AI 进行人名别名与收支结构化整理",
+    "📚 支持相册多选批量上传图片（批量自动提取、批量预览与一键入账）",
+    "📝 支持自定义 AI 系统提示词模板 (Prompt)，支持保留 {alias_rules} 动态注入别名字典",
+    "💾 全量数据一键备份下载与自定义存储目录选择",
+    "🔒 永久固化签名，支持 App 内一键检测覆盖升级"
   ],
   "download_url": "https://github.com/liwo1861a-hub/luhao-ledger/releases/latest"
 }

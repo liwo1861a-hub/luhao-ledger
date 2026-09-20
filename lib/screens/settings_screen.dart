@@ -18,7 +18,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _currentVersion = '1.0.1';
+  String _currentVersion = '1.0.2';
   bool _isCheckingUpdate = false;
   double _downloadProgress = 0.0;
   bool _isDownloading = false;
@@ -27,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _apiKeyCtrl;
   late TextEditingController _modelCtrl;
   late TextEditingController _backupPathCtrl;
+  late TextEditingController _promptCtrl;
 
   @override
   void initState() {
@@ -37,6 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _apiKeyCtrl = TextEditingController(text: s.apiKey);
     _modelCtrl = TextEditingController(text: s.modelName);
     _backupPathCtrl = TextEditingController(text: s.customBackupPath);
+    _promptCtrl = TextEditingController(text: s.customPrompt);
   }
 
   @override
@@ -45,13 +47,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _apiKeyCtrl.dispose();
     _modelCtrl.dispose();
     _backupPathCtrl.dispose();
+    _promptCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _loadVersion() async {
     final meta = await UpdateService.instance.getLocalVersion();
     setState(() {
-      _currentVersion = meta['version'] ?? '1.0.1';
+      _currentVersion = meta['version'] ?? '1.0.2';
     });
   }
 
@@ -74,6 +77,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // AI 模型配置卡片（默认 Gemini / gemini-3.7-flash）
           _buildAiConfigSection(context, provider, settings),
+          const SizedBox(height: 16),
+
+          // 自定义 AI 提示词模板卡片
+          _buildPromptTemplateSection(context, provider, settings),
           const SizedBox(height: 16),
 
           // 全量数据备份与自定义下载路径
@@ -256,6 +263,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               onChanged: (v) {
                 settings.modelName = v.trim();
+                provider.saveSettings(settings);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPromptTemplateSection(BuildContext context, LedgerProvider provider, AppSettings settings) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.edit_note, color: Colors.indigo),
+                    SizedBox(width: 8),
+                    Text('自定义 AI 提示词 (Prompt)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _promptCtrl.text = AppSettings.defaultSystemPrompt;
+                      settings.customPrompt = AppSettings.defaultSystemPrompt;
+                    });
+                    provider.saveSettings(settings);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('已恢复为官方默认提示词模板')),
+                    );
+                  },
+                  icon: const Icon(Icons.restart_alt, size: 16),
+                  label: const Text('恢复默认'),
+                ),
+              ],
+            ),
+            const Text(
+              '可自定义 AI 识别提取时的 System Prompt。支持保留 {alias_rules} 标签以自动注入成员别名字典。',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const Divider(height: 16),
+
+            TextField(
+              controller: _promptCtrl,
+              maxLines: 8,
+              decoration: InputDecoration(
+                hintText: '输入自定义 AI 系统提示词模板...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+              onChanged: (v) {
+                settings.customPrompt = v;
                 provider.saveSettings(settings);
               },
             ),

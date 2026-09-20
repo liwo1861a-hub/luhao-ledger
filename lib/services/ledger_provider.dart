@@ -73,9 +73,18 @@ class LedgerProvider extends ChangeNotifier {
 
   Future<void> saveRecord(DailyLedger record) async {
     await _db.saveDailyRecord(record);
-    // 如果新增的记录所在月份与当前月份不同，也可切至该月份
     if (record.date.length >= 7) {
       _selectedMonth = record.date.substring(0, 7);
+    }
+    await reloadStatsAndRecords();
+  }
+
+  Future<void> saveBatchRecords(List<DailyLedger> records) async {
+    for (var r in records) {
+      await _db.saveDailyRecord(r);
+    }
+    if (records.isNotEmpty && records.first.date.length >= 7) {
+      _selectedMonth = records.first.date.substring(0, 7);
     }
     await reloadStatsAndRecords();
   }
@@ -106,10 +115,31 @@ class LedgerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 智能解析图片（先执行 OCR，再执行 AI/智能规则提取）
+  /// 单张图片自动处理：免费 OCR 提取后立即全自动 AI 理解整理
   Future<DailyLedger> processImage(File imageFile) async {
     final ocrText = await _ocr.extractTextFromImage(imageFile);
     return await _ai.parseLedgerContent(ocrText, imagePath: imageFile.path);
+  }
+
+  /// 批量图片自动处理：循环执行 OCR 识别与 AI 自动结构化解析
+  Future<List<DailyLedger>> processBatchImages(
+    List<File> imageFiles, {
+    void Function(int current, int total, String status)? onProgress,
+  }) async {
+    List<DailyLedger> results = [];
+    int total = imageFiles.length;
+
+    for (int i = 0; i < total; i++) {
+      final file = imageFiles[i];
+      if (onProgress != null) {
+        onProgress(i + 1, total, '正在对第 ${i + 1}/$total 张图片执行 OCR 提取与 AI 理解...');
+      }
+      try {
+        final ledger = await processImage(file);
+        results.add(ledger);
+      } catch (_) {}
+    }
+    return results;
   }
 
   /// 智能解析纯文本或聊天记录
