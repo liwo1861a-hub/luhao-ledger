@@ -1,10 +1,11 @@
 {
-  "version": "1.0.2",
-  "build_number": 3,
+  "version": "1.0.3",
+  "build_number": 4,
   "release_date": "2026-09-20",
   "app_name": "智能记账 (Smart Ledger)",
   "package_name": "com.liwo.luhao_ledger",
   "changelog": [
+    "🧹 彻底移除内置测试示例数据，新安装与升级后初始账本 100% 纯净无预设",
     "🎨 焕新精美财务 App 启动图标与记账徽章设计",
     "⚡ OCR 识别后全自动调用 AI 进行人名别名与收支结构化整理",
     "📚 支持相册多选批量上传图片（批量自动提取、批量预览与一键入账）",

@@ -20,9 +20,9 @@ class DatabaseService {
     final dbPath = await getDatabasesPath();
     final path = p.join(dbPath, 'luhao_ledger_v1.db');
 
-    return await openDatabase(
+    final db = await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         // 每日账本主表
         await db.execute('''
@@ -69,12 +69,23 @@ class DatabaseService {
           )
         ''');
 
-        // 初始化默认别名
+        // 仅初始化默认别名映射规则，绝对不插入任何预设账单记录
         await _seedDefaultAliases(db);
-        // 初始化默认示例数据（基于用户实际提供的图片数据）
-        await _seedInitialDemoData(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        // 升级时自动清理历史旧版本残留的示例数据
+        await db.delete('expense_items', where: "daily_id = 'demo_2023_09_19'");
+        await db.delete('daily_records', where: "id = 'demo_2023_09_19'");
       },
     );
+
+    // 每次启动双重确认清理旧测试示例数据
+    try {
+      await db.delete('expense_items', where: "daily_id = 'demo_2023_09_19'");
+      await db.delete('daily_records', where: "id = 'demo_2023_09_19'");
+    } catch (_) {}
+
+    return db;
   }
 
   Future<void> _seedDefaultAliases(Database db) async {
@@ -84,34 +95,6 @@ class DatabaseService {
     ];
     for (var a in defaultAliases) {
       await db.insert('alias_rules', a, conflictAlgorithm: ConflictAlgorithm.ignore);
-    }
-  }
-
-  Future<void> _seedInitialDemoData(Database db) async {
-    final recordId = 'demo_2023_09_19';
-    final now = DateTime.now().millisecondsSinceEpoch;
-
-    await db.insert('daily_records', {
-      'id': recordId,
-      'date': '2023-09-19',
-      'total_income': 473.5,
-      'total_expense': 368.0,
-      'special_note': '向爸转账已被接收，小票进货调料与日常备菜',
-      'raw_text': '9月19日红章支出 333.5元\n我支出 6.5元\n9月19日共支出 340元\n收入 473.5元\n烨文支出22元\n坤艳支出6元',
-      'image_path': null,
-      'created_at': now,
-      'updated_at': now,
-    });
-
-    final items = [
-      {'id': 'item_1', 'daily_id': recordId, 'person_name': '红章', 'amount': 333.5, 'category': '进货支出', 'note': '9月19日红章支出'},
-      {'id': 'item_2', 'daily_id': recordId, 'person_name': '坤茹', 'amount': 6.5, 'category': '零星采购', 'note': '我支出 6.5元（已自动映射为坤茹）'},
-      {'id': 'item_3', 'daily_id': recordId, 'person_name': '烨文', 'amount': 22.0, 'category': '日常开支', 'note': '烨文支出22元'},
-      {'id': 'item_4', 'daily_id': recordId, 'person_name': '坤艳', 'amount': 6.0, 'category': '日常开支', 'note': '坤艳支出6元'},
-    ];
-
-    for (var item in items) {
-      await db.insert('expense_items', item);
     }
   }
 
@@ -314,7 +297,7 @@ class DatabaseService {
     final settings = await getSettings();
 
     final data = {
-      'version': '1.0.0',
+      'version': '1.0.3',
       'exportedAt': DateTime.now().toIso8601String(),
       'records': records.map((r) => r.toJson()).toList(),
       'aliases': aliases.map((a) => a.toJson()).toList(),
