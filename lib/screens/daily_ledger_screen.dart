@@ -148,73 +148,51 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('账目明细与智能记账', style: TextStyle(fontWeight: FontWeight.bold)),
-        actions: [
-          // 月份选择下拉
-          if (provider.availableMonths.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 12.0),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: provider.selectedMonth,
-                  icon: const Icon(Icons.calendar_month, color: Colors.indigo),
-                  items: provider.availableMonths.map((m) {
-                    return DropdownMenuItem<String>(
-                      value: m,
-                      child: Text(
-                        m,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      provider.setSelectedMonth(val);
-                    }
-                  },
-                ),
-              ),
-            ),
-        ],
+        title: Text('${provider.selectedYear}年 ${provider.selectedMonthNum}月 账目明细', style: const TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: provider.isLoading
           ? const Center(child: CircularProgressIndicator())
           : CustomScrollView(
               slivers: [
-                // 1. 年份切换栏（支持自定义设置与切换哪一年）
+                // 1. 年份选择栏目 (可自由添加与切换哪一年)
                 SliverToBoxAdapter(
                   child: _buildYearSelectionBar(context, provider),
                 ),
 
-                // 2. 嵌入当前年份栏目的【核心主功能：微信聊天记录快速粘贴 & AI 一键整理】
+                // 2. 月份选择栏目 (当前年份下的 12 个月份快速切换)
+                SliverToBoxAdapter(
+                  child: _buildMonthSelectionBar(context, provider),
+                ),
+
+                // 3. 【整合核心】当前选定某年某月的「月度概览卡片」
+                if (stats != null)
+                  SliverToBoxAdapter(
+                    child: _buildIntegratedMonthlyCard(provider, stats),
+                  ),
+
+                // 4. 【整合核心】当前年份栏目的「微信记录 AI 快速提取 & OCR 开关」
                 SliverToBoxAdapter(
                   child: _buildSmartExtractionSection(context, provider),
                 ),
 
-                // 3. AI 结构化提取结果临时预览卡片（确认后入账）
+                // 5. AI 结构化提取结果临时预览卡片（确认后一键入账）
                 if (_extractedResults.isNotEmpty)
                   SliverToBoxAdapter(
                     child: _buildExtractedResultsPreview(context, provider),
                   ),
 
-                // 4. 当月财务总览卡片
-                if (stats != null)
-                  SliverToBoxAdapter(
-                    child: _buildMonthlySummaryCard(provider, stats),
-                  ),
-
-                // 5. 每日账目明细列表
+                // 6. 当前年月下的每日明细列表
                 if (records.isEmpty)
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 40.0),
+                      padding: const EdgeInsets.symmetric(vertical: 36.0),
                       child: Center(
                         child: Column(
                           children: [
-                            Icon(Icons.receipt_long_outlined, size: 56, color: Colors.grey.shade400),
+                            Icon(Icons.receipt_long_outlined, size: 50, color: Colors.grey.shade400),
                             const SizedBox(height: 8),
-                            Text('${provider.selectedMonth} 暂无记账明细', style: TextStyle(color: Colors.grey.shade600, fontSize: 15)),
-                            const SizedBox(height: 6),
+                            Text('${provider.selectedMonthKey} 暂无记账明细', style: TextStyle(color: Colors.grey.shade600, fontSize: 15)),
+                            const SizedBox(height: 4),
                             const Text('在上方粘贴微信记录或开启OCR即可一键记账', style: TextStyle(color: Colors.grey, fontSize: 12)),
                           ],
                         ),
@@ -236,25 +214,25 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
               ],
             ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openAddRecordDialog(context, provider.selectedYear),
+        onPressed: () => _openAddRecordDialog(context, provider.selectedYear, provider.selectedMonthNum),
         icon: const Icon(Icons.add),
-        label: const Text('手动记一笔'),
+        label: const Text('记一笔'),
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
       ),
     );
   }
 
-  // 年份切换与自定义年份栏
+  // 1. 年份选择栏
   Widget _buildYearSelectionBar(BuildContext context, LedgerProvider provider) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      color: Colors.indigo.shade50.withOpacity(0.6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: Colors.indigo.shade50.withOpacity(0.7),
       child: Row(
         children: [
-          const Icon(Icons.history_toggle_off, color: Colors.indigo, size: 20),
-          const SizedBox(width: 8),
-          const Text('所属年份:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const Icon(Icons.calendar_today, color: Colors.indigo, size: 18),
+          const SizedBox(width: 6),
+          const Text('年份:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           const SizedBox(width: 8),
           Expanded(
             child: SingleChildScrollView(
@@ -292,58 +270,170 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
     );
   }
 
-  // 核心功能卡片：微信聊天记录粘贴 & 独立 OCR 开关
+  // 2. 月份横向切换栏
+  Widget _buildMonthSelectionBar(BuildContext context, LedgerProvider provider) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.view_timeline_outlined, color: Colors.blueGrey, size: 18),
+          const SizedBox(width: 6),
+          const Text('月份:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: List.generate(12, (index) {
+                  final monthNum = index + 1;
+                  final isSelected = monthNum == provider.selectedMonthNum;
+                  final monthKey = '${provider.selectedYear}-${monthNum.toString().padLeft(2, '0')}';
+                  final hasData = provider.monthsWithData.contains(monthKey);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4.0),
+                    child: FilterChip(
+                      label: Text(
+                        '$monthNum月',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected ? Colors.white : (hasData ? Colors.indigo.shade900 : Colors.black54),
+                        ),
+                      ),
+                      selected: isSelected,
+                      selectedColor: const Color(0xFF1E3A8A),
+                      backgroundColor: hasData ? Colors.indigo.shade50 : Colors.white,
+                      checkmarkColor: Colors.white,
+                      onSelected: (_) {
+                        provider.setSelectedMonthNum(monthNum);
+                      },
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 3. 整合进当前年月栏目的「月度概览卡片」
+  Widget _buildIntegratedMonthlyCard(LedgerProvider provider, MonthlyStats stats) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      padding: const EdgeInsets.all(14.0),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withOpacity(0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          )
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '📌 ${provider.selectedYear}年${provider.selectedMonthNum}月 财务概览',
+                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(10)),
+                child: Text('共 ${stats.recordCount} 天记录', style: const TextStyle(color: Colors.white, fontSize: 11)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildMiniStat('当月总收入', '¥${stats.totalIncome.toStringAsFixed(2)}', Colors.greenAccent),
+              Container(width: 1, height: 28, color: Colors.white24),
+              _buildMiniStat('当月总支出', '¥${stats.totalExpense.toStringAsFixed(2)}', Colors.amberAccent),
+              Container(width: 1, height: 28, color: Colors.white24),
+              _buildMiniStat('当月净结余', '¥${stats.netProfit.toStringAsFixed(2)}', stats.netProfit >= 0 ? Colors.cyanAccent : Colors.redAccent),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniStat(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+        const SizedBox(height: 2),
+        Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  // 4. 当前年份栏目内的「微信聊天记录快速粘贴 & AI 整理主功能区」+ 独立 OCR 开关
   Widget _buildSmartExtractionSection(BuildContext context, LedgerProvider provider) {
     return Card(
-      margin: const EdgeInsets.all(12),
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
-        padding: const EdgeInsets.all(14.0),
+        padding: const EdgeInsets.all(12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 头部：主功能标题与当前年份标识
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.bolt, color: Colors.amber, size: 22),
+                    const Icon(Icons.bolt, color: Colors.amber, size: 20),
                     const SizedBox(width: 6),
                     Text(
-                      '微信聊天记录 AI 一键提取整理',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.indigo.shade900),
+                      '微信聊天记录快速粘贴 & AI 一键整理',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.indigo.shade900),
                     ),
                   ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: Colors.indigo.shade100, borderRadius: BorderRadius.circular(6)),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(6)),
                   child: Text(
-                    '默认绑定 ${provider.selectedYear}年',
-                    style: TextStyle(color: Colors.indigo.shade900, fontWeight: FontWeight.bold, fontSize: 11),
+                    '默认归属 ${provider.selectedYear}年',
+                    style: TextStyle(color: Colors.indigo.shade800, fontWeight: FontWeight.bold, fontSize: 11),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
 
-            // 主功能输入框（支持直接粘贴微信聊天记录）
             TextField(
               controller: _chatTextCtrl,
               maxLines: 3,
               decoration: InputDecoration(
-                hintText: '直接在此粘贴微信聊天记录...\n如：9月19日红章支出 333.5元，我支出 6.5元，收入 473.5元',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                hintText: '直接粘贴微信群账目记录...\n例如：9月19日红章支出 333.5元，我支出 6.5元，收入 473.5元',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 filled: true,
                 fillColor: Colors.grey.shade50,
                 isDense: true,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
 
-            // 快捷操作按钮行：一键粘贴并提取 / 快速提取
             Row(
               children: [
                 OutlinedButton.icon(
@@ -366,18 +456,17 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
 
-            // 独立 OCR 识图功能开关栏（与微信文字提取彻底分开）
-            const Divider(height: 16),
+            // 独立 OCR 识图开关
+            const Divider(height: 14),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    Icon(Icons.document_scanner, size: 18, color: Colors.blueGrey.shade700),
+                    Icon(Icons.document_scanner, size: 16, color: Colors.blueGrey.shade700),
                     const SizedBox(width: 6),
-                    const Text('图片 / 小票 OCR 识图模块', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    const Text('图片 / 小票 OCR 识图模式', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
                   ],
                 ),
                 Switch.adaptive(
@@ -388,14 +477,13 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
               ],
             ),
 
-            // 展开的 OCR 操作按钮
             if (_isOcrSectionExpanded) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: Colors.blueGrey.shade50,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   children: [
@@ -404,9 +492,10 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.teal.shade700,
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
                         ),
                         onPressed: _isProcessing ? null : _pickBatchImages,
-                        icon: const Icon(Icons.photo_library, size: 18),
+                        icon: const Icon(Icons.photo_library, size: 16),
                         label: const Text('批量相册选图'),
                       ),
                     ),
@@ -416,9 +505,10 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blueGrey.shade700,
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
                         ),
                         onPressed: _isProcessing ? null : _pickCameraImage,
-                        icon: const Icon(Icons.camera_alt, size: 18),
+                        icon: const Icon(Icons.camera_alt, size: 16),
                         label: const Text('拍照识图'),
                       ),
                     ),
@@ -427,11 +517,10 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
               ),
             ],
 
-            // 加载处理提示
             if (_isProcessing) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               LinearProgressIndicator(value: _batchProgress > 0 ? _batchProgress : null),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Center(child: Text(_statusMessage, style: const TextStyle(fontSize: 12, color: Colors.indigo, fontWeight: FontWeight.bold))),
             ],
           ],
@@ -440,14 +529,14 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
     );
   }
 
-  // 提取完成临时预览卡片
+  // 5. 提取完成临时预览卡片
   Widget _buildExtractedResultsPreview(BuildContext context, LedgerProvider provider) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.green.shade50,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.green.shade300),
       ),
       child: Column(
@@ -458,9 +547,9 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  const Icon(Icons.check_circle, color: Colors.green, size: 18),
                   const SizedBox(width: 6),
-                  Text('AI 提取成功 (${_extractedResults.length} 笔)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text('AI 提取成功 (${_extractedResults.length} 笔)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 ],
               ),
               ElevatedButton(
@@ -483,21 +572,21 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
 
           ..._extractedResults.map((r) {
             return Container(
               margin: const EdgeInsets.only(bottom: 6),
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(r.date, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
-                      Text('收入: +¥${r.totalIncome}  |  支出: -¥${r.totalExpense}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      Text(r.date, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo, fontSize: 13)),
+                      Text('收入: +¥${r.totalIncome} | 支出: -¥${r.totalExpense}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -514,59 +603,11 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
     );
   }
 
-  // 月度财务概览
-  Widget _buildMonthlySummaryCard(LedgerProvider provider, MonthlyStats stats) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
-      padding: const EdgeInsets.all(14.0),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('${provider.selectedMonth} 月度报表', style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
-              Text('共 ${stats.recordCount} 天记录', style: const TextStyle(color: Colors.white, fontSize: 12)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildMiniStat('当月总收入', '¥${stats.totalIncome.toStringAsFixed(2)}', Colors.greenAccent),
-              Container(width: 1, height: 28, color: Colors.white24),
-              _buildMiniStat('当月总支出', '¥${stats.totalExpense.toStringAsFixed(2)}', Colors.amberAccent),
-              Container(width: 1, height: 28, color: Colors.white24),
-              _buildMiniStat('当月结余', '¥${stats.netProfit.toStringAsFixed(2)}', stats.netProfit >= 0 ? Colors.cyanAccent : Colors.redAccent),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMiniStat(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
-        const SizedBox(height: 2),
-        Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
-      ],
-    );
-  }
-
-  // 每日账目卡片
+  // 6. 每日账目卡片
   Widget _buildDailyRecordCard(BuildContext context, DailyLedger record, LedgerProvider provider) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      elevation: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      elevation: 1.5,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12.0),
@@ -613,17 +654,13 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
             ),
             const SizedBox(height: 8),
 
-            // 成员支出标签
             Wrap(
               spacing: 6,
               runSpacing: 4,
               children: record.expenses.map((item) {
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.indigo.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
+                  decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(6)),
                   child: Text(
                     '${item.personName}: ¥${item.amount.toStringAsFixed(2)}',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.indigo.shade900),
@@ -632,7 +669,6 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
               }).toList(),
             ),
 
-            // 特殊情况备注（仅显示用户自己填写的内容）
             if (record.specialNote.isNotEmpty) ...[
               const SizedBox(height: 6),
               Container(
@@ -681,7 +717,7 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
     );
   }
 
-  void _openAddRecordDialog(BuildContext context, int defaultYear) {
+  void _openAddRecordDialog(BuildContext context, int defaultYear, int defaultMonth) {
     showDialog(
       context: context,
       builder: (_) => EditLedgerDialog(defaultYear: defaultYear),

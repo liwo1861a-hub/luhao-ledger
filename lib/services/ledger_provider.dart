@@ -18,14 +18,16 @@ class LedgerProvider extends ChangeNotifier {
   int _selectedYear = DateTime.now().year;
   int get selectedYear => _selectedYear;
 
+  int _selectedMonthNum = DateTime.now().month;
+  int get selectedMonthNum => _selectedMonthNum;
+
   List<int> _availableYears = [];
   List<int> get availableYears => _availableYears;
 
-  List<String> _availableMonths = [];
-  List<String> get availableMonths => _availableMonths;
+  Set<String> _monthsWithData = {};
+  Set<String> get monthsWithData => _monthsWithData;
 
-  String _selectedMonth = DateFormat('yyyy-MM').format(DateTime.now());
-  String get selectedMonth => _selectedMonth;
+  String get selectedMonthKey => '$_selectedYear-${_selectedMonthNum.toString().padLeft(2, '0')}';
 
   MonthlyStats? _monthlyStats;
   MonthlyStats? get monthlyStats => _monthlyStats;
@@ -61,9 +63,11 @@ class LedgerProvider extends ChangeNotifier {
   }
 
   Future<void> _refreshAvailableYearsAndMonths() async {
-    final allMonths = await _db.getAvailableMonths();
+    final allDbMonths = await _db.getAvailableMonths();
+    _monthsWithData = allDbMonths.toSet();
+
     Set<int> years = {DateTime.now().year, 2025, 2024, 2023};
-    for (var m in allMonths) {
+    for (var m in allDbMonths) {
       if (m.length >= 4) {
         final y = int.tryParse(m.substring(0, 4));
         if (y != null) years.add(y);
@@ -74,20 +78,16 @@ class LedgerProvider extends ChangeNotifier {
     if (!_availableYears.contains(_selectedYear)) {
       _selectedYear = _availableYears.first;
     }
-
-    _availableMonths = allMonths.where((m) => m.startsWith('$_selectedYear-')).toList();
-    if (_availableMonths.isEmpty) {
-      _availableMonths = ['$_selectedYear-01'];
-    }
-    if (!_availableMonths.contains(_selectedMonth)) {
-      _selectedMonth = _availableMonths.first;
-    }
   }
 
   Future<void> setSelectedYear(int year) async {
     _selectedYear = year;
-    _selectedMonth = '$_selectedYear-${_selectedMonth.split('-').last}';
     await _refreshAvailableYearsAndMonths();
+    await reloadStatsAndRecords();
+  }
+
+  Future<void> setSelectedMonthNum(int monthNum) async {
+    _selectedMonthNum = monthNum;
     await reloadStatsAndRecords();
   }
 
@@ -99,29 +99,25 @@ class LedgerProvider extends ChangeNotifier {
     await setSelectedYear(year);
   }
 
-  Future<void> setSelectedMonth(String month) async {
-    _selectedMonth = month;
-    if (month.length >= 4) {
-      final y = int.tryParse(month.substring(0, 4));
-      if (y != null) _selectedYear = y;
-    }
-    await reloadStatsAndRecords();
-  }
-
   Future<void> reloadStatsAndRecords() async {
-    _dailyRecords = await _db.getRecordsByMonth(_selectedMonth);
-    _monthlyStats = await _db.getMonthlyStats(_selectedMonth);
+    final key = selectedMonthKey;
+    _dailyRecords = await _db.getRecordsByMonth(key);
+    _monthlyStats = await _db.getMonthlyStats(key);
     _allTimeStats = await _db.getAllTimeStats();
     _aliasRules = await _db.getAliasRules();
+    final allDbMonths = await _db.getAvailableMonths();
+    _monthsWithData = allDbMonths.toSet();
     notifyListeners();
   }
 
   Future<void> saveRecord(DailyLedger record) async {
     await _db.saveDailyRecord(record);
     if (record.date.length >= 7) {
-      _selectedMonth = record.date.substring(0, 7);
-      final y = int.tryParse(record.date.substring(0, 4));
-      if (y != null) _selectedYear = y;
+      final parts = record.date.split('-');
+      if (parts.length >= 2) {
+        _selectedYear = int.tryParse(parts[0]) ?? _selectedYear;
+        _selectedMonthNum = int.tryParse(parts[1]) ?? _selectedMonthNum;
+      }
     }
     await _refreshAvailableYearsAndMonths();
     await reloadStatsAndRecords();
@@ -132,9 +128,11 @@ class LedgerProvider extends ChangeNotifier {
       await _db.saveDailyRecord(r);
     }
     if (records.isNotEmpty && records.first.date.length >= 7) {
-      _selectedMonth = records.first.date.substring(0, 7);
-      final y = int.tryParse(records.first.date.substring(0, 4));
-      if (y != null) _selectedYear = y;
+      final parts = records.first.date.split('-');
+      if (parts.length >= 2) {
+        _selectedYear = int.tryParse(parts[0]) ?? _selectedYear;
+        _selectedMonthNum = int.tryParse(parts[1]) ?? _selectedMonthNum;
+      }
     }
     await _refreshAvailableYearsAndMonths();
     await reloadStatsAndRecords();
@@ -167,7 +165,7 @@ class LedgerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 单张图片自动处理：免费 OCR 提取后立即全自动 AI 理解整理（绑定年份）
+  /// 单张图片自动处理：免费 OCR 提取后立即全自动 AI 理解整理（绑定当前年月）
   Future<DailyLedger> processImage(File imageFile, {int? year}) async {
     final targetYear = year ?? _selectedYear;
     final ocrText = await _ocr.extractTextFromImage(imageFile);
@@ -197,7 +195,7 @@ class LedgerProvider extends ChangeNotifier {
     return results;
   }
 
-  /// 智能解析纯文本或聊天记录（绑定年份）
+  /// 智能解析纯文本或聊天记录（绑定当前年月）
   Future<DailyLedger> processText(String text, {int? year}) async {
     final targetYear = year ?? _selectedYear;
     return await _ai.parseLedgerContent(text, defaultYear: targetYear);

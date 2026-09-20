@@ -40,15 +40,15 @@ class UpdateService {
       final jsonStr = await rootBundle.loadString('assets/version.json');
       return jsonDecode(jsonStr);
     } catch (_) {
-      return {'version': '1.0.0', 'build_number': 1};
+      return {'version': '1.0.5', 'build_number': 6};
     }
   }
 
   /// 检查 GitHub Releases 是否有新版本
   Future<UpdateInfo> checkForUpdate() async {
     final localMeta = await getLocalVersion();
-    final currentVersion = localMeta['version'] as String? ?? '1.0.0';
-    final currentBuild = localMeta['build_number'] as int? ?? 1;
+    final currentVersion = localMeta['version'] as String? ?? '1.0.5';
+    final currentBuild = localMeta['build_number'] as int? ?? 6;
 
     try {
       final response = await _dio.get(
@@ -58,7 +58,7 @@ class UpdateService {
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        String tagName = data['tag_name'] ?? 'v1.0.0';
+        String tagName = data['tag_name'] ?? 'v1.0.5';
         String remoteVersion = tagName.replaceFirst('v', '').trim();
         String releaseName = data['name'] ?? '最新发布版本';
         String changelog = data['body'] ?? '常规性能优化与功能更新';
@@ -126,16 +126,8 @@ class UpdateService {
     required Function(String error) onError,
   }) async {
     try {
-      if (!url.endsWith('.apk')) {
-        final uri = Uri.parse(url);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-          return;
-        }
-      }
-
       final dir = await getExternalStorageDirectory() ?? await getTemporaryDirectory();
-      final savePath = '${dir.path}/luhao-ledger-update.apk';
+      final savePath = '${dir.path}/smart-ledger-update.apk';
 
       await _dio.download(
         url,
@@ -151,13 +143,29 @@ class UpdateService {
       if (await file.exists()) {
         final result = await OpenFilex.open(savePath);
         if (result.type != ResultType.done) {
-          onError('打开安装包失败: ${result.message}');
+          // 如果打开失败，通过系统浏览器直接打开下载链接作为保底
+          final uri = Uri.parse(url);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } else {
+            onError('调起安装程序失败: ${result.message}，请在系统设置中授予“安装未知应用”权限');
+          }
         }
       } else {
         onError('安装包文件未找到');
       }
     } catch (e) {
-      onError('下载或安装失败: $e');
+      // 降级使用外部浏览器下载
+      try {
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          onError('下载失败: $e');
+        }
+      } catch (_) {
+        onError('下载或安装失败: $e');
+      }
     }
   }
 }
