@@ -28,6 +28,9 @@ class LedgerProvider extends ChangeNotifier {
   Set<String> get monthsWithData => _monthsWithData;
 
   String get selectedMonthKey => '$_selectedYear-${_selectedMonthNum.toString().padLeft(2, '0')}';
+  String get selectedMonth => selectedMonthKey;
+
+  List<String> get availableMonths => List.generate(12, (i) => '$_selectedYear-${(i + 1).toString().padLeft(2, '0')}');
 
   MonthlyStats? _monthlyStats;
   MonthlyStats? get monthlyStats => _monthlyStats;
@@ -88,6 +91,15 @@ class LedgerProvider extends ChangeNotifier {
 
   Future<void> setSelectedMonthNum(int monthNum) async {
     _selectedMonthNum = monthNum;
+    await reloadStatsAndRecords();
+  }
+
+  Future<void> setSelectedMonth(String month) async {
+    if (month.length >= 7) {
+      final parts = month.split('-');
+      _selectedYear = int.tryParse(parts[0]) ?? _selectedYear;
+      _selectedMonthNum = int.tryParse(parts[1]) ?? _selectedMonthNum;
+    }
     await reloadStatsAndRecords();
   }
 
