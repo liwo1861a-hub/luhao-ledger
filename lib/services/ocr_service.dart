@@ -80,7 +80,7 @@ class OcrService {
     final base64Image = base64Encode(bytes);
 
     final payload = {
-      'model': settings.modelName.isNotEmpty ? settings.modelName : 'gpt-4o-mini',
+      'model': settings.modelName.isNotEmpty ? settings.modelName : 'gemini-3.7-flash',
       'messages': [
         {
           'role': 'user',

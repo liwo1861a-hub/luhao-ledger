@@ -6,11 +6,11 @@ import 'screens/main_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const LuhaoLedgerApp());
+  runApp(const SmartLedgerApp());
 }
 
-class LuhaoLedgerApp extends StatelessWidget {
-  const LuhaoLedgerApp({super.key});
+class SmartLedgerApp extends StatelessWidget {
+  const SmartLedgerApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +19,7 @@ class LuhaoLedgerApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LedgerProvider()),
       ],
       child: MaterialApp(
-        title: '路皓智能记账',
+        title: '智能记账',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,

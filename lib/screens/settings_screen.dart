@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:open_filex/open_filex.dart';
 import '../models/ledger_models.dart';
 import '../models/app_settings.dart';
 import '../services/ledger_provider.dart';
@@ -17,21 +18,40 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _currentVersion = '1.0.0';
+  String _currentVersion = '1.0.1';
   bool _isCheckingUpdate = false;
   double _downloadProgress = 0.0;
   bool _isDownloading = false;
+
+  late TextEditingController _endpointCtrl;
+  late TextEditingController _apiKeyCtrl;
+  late TextEditingController _modelCtrl;
+  late TextEditingController _backupPathCtrl;
 
   @override
   void initState() {
     super.initState();
     _loadVersion();
+    final s = context.read<LedgerProvider>().settings;
+    _endpointCtrl = TextEditingController(text: s.apiEndpoint);
+    _apiKeyCtrl = TextEditingController(text: s.apiKey);
+    _modelCtrl = TextEditingController(text: s.modelName);
+    _backupPathCtrl = TextEditingController(text: s.customBackupPath);
+  }
+
+  @override
+  void dispose() {
+    _endpointCtrl.dispose();
+    _apiKeyCtrl.dispose();
+    _modelCtrl.dispose();
+    _backupPathCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadVersion() async {
     final meta = await UpdateService.instance.getLocalVersion();
     setState(() {
-      _currentVersion = meta['version'] ?? '1.0.0';
+      _currentVersion = meta['version'] ?? '1.0.1';
     });
   }
 
@@ -52,12 +72,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildAliasSection(context, provider, aliases),
           const SizedBox(height: 16),
 
-          // AI 模型配置卡片
+          // AI 模型配置卡片（默认 Gemini / gemini-3.7-flash）
           _buildAiConfigSection(context, provider, settings),
           const SizedBox(height: 16),
 
-          // 数据备份与迁移
-          _buildDataBackupSection(context, provider),
+          // 全量数据备份与自定义下载路径
+          _buildDataBackupSection(context, provider, settings),
           const SizedBox(height: 16),
 
           // 软件版本与在线更新
@@ -95,7 +115,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
             const Text(
-              '智能识别时，聊天中出现的称谓将自动映射为真实人名（如"我"自动映射为"坤茹"）。',
+              '智能识别时，聊天中出现的称谓将自动映射为真实人名（如"我"、"妈"自动映射为"坤茹"）。',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const Divider(height: 16),
@@ -137,85 +157,115 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(Icons.smart_toy, color: Colors.indigo),
-                SizedBox(width: 8),
-                Text('AI 与大模型接口设置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const Row(
+                  children: [
+                    Icon(Icons.smart_toy, color: Colors.indigo),
+                    SizedBox(width: 8),
+                    Text('AI 与大模型接口设置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(8)),
+                  child: Text(
+                    settings.aiProvider.toUpperCase(),
+                    style: TextStyle(color: Colors.indigo.shade800, fontWeight: FontWeight.bold, fontSize: 11),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
-            const Text('支持离线免费规则引擎，或接入 DeepSeek / Gemini / OpenAI 智能多模态服务。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const Text('默认使用 Google Gemini (gemini-3.7-flash)，所有地址、密钥、模型均可自由修改并持久化保存。', style: TextStyle(fontSize: 12, color: Colors.grey)),
             const Divider(height: 20),
 
             DropdownButtonFormField<String>(
               value: settings.aiProvider,
               decoration: const InputDecoration(
-                labelText: 'AI 引擎模式',
+                labelText: 'AI 引擎模式 (可修改)',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
               items: const [
-                DropdownMenuItem(value: 'offline_rules', child: Text('本地智能规则引擎 (完全免费离线)')),
+                DropdownMenuItem(value: 'gemini', child: Text('Google Gemini API (默认推荐)')),
                 DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek API (深度求索)')),
-                DropdownMenuItem(value: 'gemini', child: Text('Google Gemini API')),
-                DropdownMenuItem(value: 'openai', child: Text('OpenAI / 兼容接口 (如通义/硅基流动)')),
+                DropdownMenuItem(value: 'openai', child: Text('OpenAI / 兼容通道 (如通义/硅基流动/Ollama)')),
+                DropdownMenuItem(value: 'offline_rules', child: Text('本地智能规则引擎 (完全免费离线)')),
               ],
               onChanged: (val) {
                 if (val != null) {
                   settings.aiProvider = val;
-                  if (val == 'deepseek') {
+                  if (val == 'gemini') {
+                    settings.apiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+                    settings.modelName = 'gemini-3.7-flash';
+                  } else if (val == 'deepseek') {
                     settings.apiEndpoint = 'https://api.deepseek.com/v1/chat/completions';
                     settings.modelName = 'deepseek-chat';
-                  } else if (val == 'gemini') {
-                    settings.apiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-                    settings.modelName = 'gemini-1.5-flash';
                   } else if (val == 'openai') {
                     settings.apiEndpoint = 'https://api.openai.com/v1/chat/completions';
                     settings.modelName = 'gpt-4o-mini';
                   }
+                  _endpointCtrl.text = settings.apiEndpoint;
+                  _modelCtrl.text = settings.modelName;
                   provider.saveSettings(settings);
                 }
               },
             ),
 
-            if (settings.aiProvider != 'offline_rules') ...[
-              const SizedBox(height: 12),
-              TextFormField(
-                initialValue: settings.apiEndpoint,
-                decoration: const InputDecoration(labelText: 'API Endpoint (服务地址)', border: OutlineInputBorder(), isDense: true),
-                onChanged: (v) {
-                  settings.apiEndpoint = v.trim();
-                  provider.saveSettings(settings);
-                },
+            const SizedBox(height: 12),
+            TextField(
+              controller: _endpointCtrl,
+              decoration: const InputDecoration(
+                labelText: 'API Endpoint 服务接口地址 (可自定义)',
+                hintText: '如 https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                initialValue: settings.apiKey,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'API Key (密钥)', border: OutlineInputBorder(), isDense: true),
-                onChanged: (v) {
-                  settings.apiKey = v.trim();
-                  provider.saveSettings(settings);
-                },
+              onChanged: (v) {
+                settings.apiEndpoint = v.trim();
+                provider.saveSettings(settings);
+              },
+            ),
+
+            const SizedBox(height: 12),
+            TextField(
+              controller: _apiKeyCtrl,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'API Key 密钥 (可填入您的 Key)',
+                hintText: '填入 AI 平台的 API 密钥',
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                initialValue: settings.modelName,
-                decoration: const InputDecoration(labelText: '模型名称 (Model Name)', border: OutlineInputBorder(), isDense: true),
-                onChanged: (v) {
-                  settings.modelName = v.trim();
-                  provider.saveSettings(settings);
-                },
+              onChanged: (v) {
+                settings.apiKey = v.trim();
+                provider.saveSettings(settings);
+              },
+            ),
+
+            const SizedBox(height: 12),
+            TextField(
+              controller: _modelCtrl,
+              decoration: const InputDecoration(
+                labelText: '模型名称 Model (默认 gemini-3.7-flash，可自定义)',
+                hintText: '如 gemini-3.7-flash / deepseek-chat / gpt-4o',
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
-            ],
+              onChanged: (v) {
+                settings.modelName = v.trim();
+                provider.saveSettings(settings);
+              },
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDataBackupSection(BuildContext context, LedgerProvider provider) {
+  Widget _buildDataBackupSection(BuildContext context, LedgerProvider provider, AppSettings settings) {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -228,27 +278,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Icon(Icons.backup, color: Colors.indigo),
                 SizedBox(width: 8),
-                Text('数据备份与迁移', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Text('全量信息备份与自定义下载', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 8),
-            const Text('支持将全部记账记录、分类及别名导出备份为 JSON 文件，或导入历史账本。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const Text(
+              '一键打包备份所有信息（每日账目、成员支出明细、特殊情况备注、人名别名映射、系统配置），下载存储地址完全支持自定义设置。',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
             const Divider(height: 20),
 
+            // 自定义下载与保存目录配置
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _exportData(context),
-                    icon: const Icon(Icons.file_download),
-                    label: const Text('导出完整数据'),
+                  child: TextField(
+                    controller: _backupPathCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '自定义备份下载存储目录',
+                      hintText: '默认存储在应用文档目录，可点击右侧选择',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (v) {
+                      settings.customBackupPath = v.trim();
+                      provider.saveSettings(settings);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  icon: const Icon(Icons.folder_open),
+                  tooltip: '选择自定义文件夹',
+                  onPressed: () async {
+                    String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+                    if (selectedDirectory != null) {
+                      _backupPathCtrl.text = selectedDirectory;
+                      settings.customBackupPath = selectedDirectory;
+                      await provider.saveSettings(settings);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('已设定自定义备份下载目录: $selectedDirectory')),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // 导出备份与导入还原按钮
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () => _exportAllData(context, settings),
+                    icon: const Icon(Icons.download, size: 18),
+                    label: const Text('备份下载全部信息'),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
                     onPressed: () => _importData(context, provider),
-                    icon: const Icon(Icons.file_upload),
+                    icon: const Icon(Icons.upload_file, size: 18),
                     label: const Text('导入备份数据'),
                   ),
                 ),
@@ -353,22 +457,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _exportData(BuildContext context) async {
+  Future<void> _exportAllData(BuildContext context, AppSettings settings) async {
     try {
       final jsonStr = await DatabaseService.instance.exportToJson();
-      final dir = await getExternalStorageDirectory() ?? await getTemporaryDirectory();
-      final file = File('${dir.path}/luhao_ledger_backup_${DateTime.now().millisecondsSinceEpoch}.json');
+
+      String targetDir;
+      if (settings.customBackupPath.isNotEmpty && Directory(settings.customBackupPath).existsSync()) {
+        targetDir = settings.customBackupPath;
+      } else {
+        final dir = await getExternalStorageDirectory() ?? await getTemporaryDirectory();
+        targetDir = dir.path;
+      }
+
+      final fileName = 'smart_ledger_full_backup_${DateTime.now().millisecondsSinceEpoch}.json';
+      final file = File('$targetDir/$fileName');
       await file.writeAsString(jsonStr);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('数据已成功导出至: ${file.path}'), backgroundColor: Colors.green),
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('全量信息备份成功'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('已将所有账目、成员明细、特殊备注、别名与配置导出！'),
+                const SizedBox(height: 10),
+                Text('保存路径:\n${file.path}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.indigo)),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('确定')),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  OpenFilex.open(file.path);
+                },
+                child: const Text('打开文件'),
+              ),
+            ],
+          ),
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('备份导出失败: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -382,7 +519,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await provider.init();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('数据导入并同步成功！'), backgroundColor: Colors.green),
+            const SnackBar(content: Text('全量数据导入并同步成功！'), backgroundColor: Colors.green),
           );
         }
       }

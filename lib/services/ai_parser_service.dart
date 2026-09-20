@@ -249,7 +249,7 @@ class AiParserService {
         'Authorization': 'Bearer ${settings.apiKey.trim()}',
       }),
       data: {
-        'model': settings.modelName.isNotEmpty ? settings.modelName : 'deepseek-chat',
+        'model': settings.modelName.isNotEmpty ? settings.modelName : 'gemini-3.7-flash',
         'messages': [
           {'role': 'system', 'content': systemPrompt},
           {'role': 'user', 'content': rawText},

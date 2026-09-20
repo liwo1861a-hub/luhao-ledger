@@ -1,7 +1,7 @@
 name: luhao_ledger
-description: "路皓智能记账 (Smart Ledger) - 支持微信聊天记录/小票图片OCR识别、AI多模态提取、成员别名智能解析、每日收入支出统计、月度分类与全记录汇总的专业记账应用"
+description: "智能记账 (Smart Ledger) - 支持微信聊天记录/小票图片OCR识别、Gemini 3.7 Flash / AI多模态提取、成员别名智能解析、每日收入支出统计、月度分类与全记录汇总的专业记账应用"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
