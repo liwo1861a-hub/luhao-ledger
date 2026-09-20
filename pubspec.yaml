@@ -1,0 +1,39 @@
+name: luhao_ledger
+description: "路皓智能记账 (Smart Ledger) - 支持微信聊天记录/小票图片OCR识别、AI多模态提取、成员别名智能解析、每日收入支出统计、月度分类与全记录汇总的专业记账应用"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.2
+  intl: ^0.19.0
+  fl_chart: ^0.68.0
+  shared_preferences: ^2.3.2
+  sqflite: ^2.3.3+1
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  http: ^1.2.2
+  dio: ^5.7.0
+  image_picker: ^1.1.2
+  file_picker: ^8.1.4
+  open_filex: ^4.5.0
+  url_launcher: ^6.3.0
+  package_info_plus: ^8.1.0
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/version.json

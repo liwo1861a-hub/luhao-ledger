@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "build_number": 1,
+  "release_date": "2026-09-20",
+  "app_name": "路皓智能记账 (Smart Ledger)",
+  "package_name": "com.liwo.luhao_ledger",
+  "changelog": [
+    "✨ 首发版本发布：支持图片/聊天记录/小票 OCR 自动识别提取",
+    "🤖 接入 AI 智能理解：智能识别成员人名（如红章、坤茹、烨文、坤艳等）与收支关系",
+    "👤 智能别名映射：支持将'我'、'妈'等称谓自动映射为真实人名（如坤茹）",
+    "📊 多维度财务看板：支持每日收支明细、月度分类汇总、全记录总收支计算与结余分析",
+    "📝 每日特殊情况备注：支持记录天气、特殊进货、转账备注等特殊情景",
+    "📈 成员支出排行与可视化图表：各成员开销占比、每日收支趋势一目了然",
+    "🔒 永久固化签名与软件内自动检查更新，数据支持 JSON / Excel 导出导入"
+  ],
+  "download_url": "https://github.com/liwo1861a-hub/luhao-ledger/releases/latest"
+}
