@@ -26,7 +26,7 @@ class AiParserService {
         settings.apiEndpoint.trim().isNotEmpty) {
       try {
         final aiResult = await _parseWithLlm(rawText, settings, aliasRules, imagePath: imagePath, defaultYear: year);
-        if (aiResult != null) {
+        if (aiResult != null && (aiResult.expenses.isNotEmpty || aiResult.totalIncome > 0)) {
           return aiResult;
         }
       } catch (_) {
@@ -54,42 +54,48 @@ class AiParserService {
 
     // 2. 提取总收入
     double totalIncome = 0.0;
-    final incomeRegex = RegExp(r'(?:今日)?(?:收入|入账|进账|营业额|收钱)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)', caseSensitive: false);
+    final incomeRegex = RegExp(
+      r'(?:今日|当天|本日|总)?(?:收入|入账|进账|营业额|收钱|总收款|收款)\s*[:：=]?\s*([0-9]+(?:\.[0-9]+)?)',
+      caseSensitive: false,
+    );
     final incomeMatch = incomeRegex.firstMatch(text);
     if (incomeMatch != null) {
       totalIncome = double.tryParse(incomeMatch.group(1) ?? '0') ?? 0.0;
     }
 
-    // 3. 提取各成员支出明细
+    // 3. 提取各成员单独支出明细（支持换行、逗号、空格、顿号等多格式切分）
     List<ExpenseItem> expenseItems = [];
-    final lines = text.split(RegExp(r'[\r\n]+'));
-    final summaryExpenseRegex = RegExp(r'(?:共支出|总支出|合计支出|共计支出|总计)\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)');
+    final segments = text.split(RegExp(r'[\r\n,，;；、\t]+'));
 
-    for (var line in lines) {
-      final trimmed = line.trim();
+    // 汇总词过滤正则（防止将“共支出 340元”误当成某人支出）
+    final summaryExpenseRegex = RegExp(r'^(?:(?:\d{1,2}月\d{1,2}日)?\s*)?(?:共支出|总支出|合计支出|共计支出|总计|共计|总共|合计|共)\s*[:：=]?\s*[0-9]+(?:\.[0-9]+)?');
+
+    final expensePattern = RegExp(
+      r'(?:(?:\d{1,2}月\d{1,2}日)?\s*)?([^\d\s,，.。:：=]+?)\s*(?:支出|花费|花了|用去|采购|出账|买菜|垫付|付)?\s*[:：=]?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:元|块|RMB)?',
+      caseSensitive: false,
+    );
+
+    for (var seg in segments) {
+      final trimmed = seg.trim();
       if (trimmed.isEmpty) continue;
 
-      // 过滤总支出汇总行
-      if (summaryExpenseRegex.hasMatch(trimmed)) {
+      // 过滤总收入和总支出汇总片段
+      if (incomeRegex.hasMatch(trimmed) || summaryExpenseRegex.hasMatch(trimmed)) {
         continue;
       }
-
-      // 匹配成员支出行
-      final expensePattern = RegExp(
-        r'(?:(?:\d{1,2}月\d{1,2}日)?\s*)?([^\d\s,，.。:：]+?)(?:支出|花费|花了|用去|采购|出账)?\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:元|块|RMB)?(?:\s*(.*))?',
-        caseSensitive: false,
-      );
 
       final match = expensePattern.firstMatch(trimmed);
       if (match != null) {
         String rawName = match.group(1)?.trim() ?? '';
         String amountStr = match.group(2)?.trim() ?? '';
 
-        // 清洗人名前缀
+        // 清洗人名中的日期前缀与干扰词
         rawName = rawName.replaceAll(RegExp(r'^\d{1,2}月\d{1,2}日'), '').trim();
-        rawName = rawName.replaceAll(RegExp(r'^(?:妈|爸|微信|用户)[:：\s]*'), '').trim();
+        rawName = rawName.replaceAll(RegExp(r'^(?:微信|用户|向|给)[:：\s]*'), '').trim();
+        rawName = rawName.replaceAll('支出', '').trim();
 
-        if (rawName == '共' || rawName == '总' || rawName == '合计' || rawName == '收入' || rawName == '入账' || rawName.isEmpty) {
+        const filterWords = ['共', '总', '合计', '共计', '总计', '总共', '收入', '入账', '进账', '营业额', '收钱', '转账', '已被接收', '已接收', '备注', '特殊', '结余', '利润'];
+        if (filterWords.contains(rawName) || rawName.isEmpty) {
           continue;
         }
 
@@ -97,7 +103,7 @@ class AiParserService {
         if (amount != null && amount > 0) {
           String finalName = aliasMap[rawName] ?? rawName;
 
-          // 类别固定为日常支出，用户可在界面中自行选择修改
+          // 类别统一默认为日常支出，用户在界面中可自由按需下拉切换
           expenseItems.add(ExpenseItem(
             personName: finalName,
             amount: amount,
@@ -108,7 +114,30 @@ class AiParserService {
       }
     }
 
-    // 备注不自动识别猜测，留空由用户自己输入
+    // 4. 后备扫描：若上述切分未识别到任何成员支出，通过已知人名+金额全局检索
+    if (expenseItems.isEmpty) {
+      final knownPersons = {...aliasMap.keys, ...aliasMap.values, '红章', '坤茹', '烨文', '坤艳'};
+      for (var name in knownPersons) {
+        final regex = RegExp('$name\\s*(?:支出|花费|花了|用去|采购|出账)?\\s*[:：=]?\\s*([0-9]+(?:\\.[0-9]+)?)');
+        final m = regex.firstMatch(text);
+        if (m != null) {
+          final amt = double.tryParse(m.group(1) ?? '0') ?? 0.0;
+          if (amt > 0) {
+            final realName = aliasMap[name] ?? name;
+            if (!expenseItems.any((e) => e.personName == realName)) {
+              expenseItems.add(ExpenseItem(
+                personName: realName,
+                amount: amt,
+                category: '日常支出',
+                note: '',
+              ));
+            }
+          }
+        }
+      }
+    }
+
+    // 备注不自动识别猜测，留空由用户在界面中自主填写特殊情况
     return DailyLedger(
       date: extractedDate,
       totalIncome: totalIncome,
@@ -196,12 +225,16 @@ class AiParserService {
       List<ExpenseItem> items = [];
       if (jsonMap['expenses'] != null) {
         for (var item in jsonMap['expenses']) {
-          items.add(ExpenseItem(
-            personName: item['personName'] ?? '未命名',
-            amount: (item['amount'] as num?)?.toDouble() ?? 0.0,
-            category: item['category'] ?? '日常支出',
-            note: '',
-          ));
+          String pName = (item['personName'] ?? '').toString().trim();
+          double amt = (item['amount'] as num?)?.toDouble() ?? 0.0;
+          if (pName.isNotEmpty && amt > 0) {
+            items.add(ExpenseItem(
+              personName: pName,
+              amount: amt,
+              category: item['category'] ?? '日常支出',
+              note: '',
+            ));
+          }
         }
       }
 

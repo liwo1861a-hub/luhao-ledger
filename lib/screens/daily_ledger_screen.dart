@@ -592,7 +592,12 @@ class _DailyLedgerScreenState extends State<DailyLedgerScreen> {
                   const SizedBox(height: 4),
                   Wrap(
                     spacing: 6,
-                    children: r.expenses.map((e) => Text('${e.personName}: ¥${e.amount}', style: const TextStyle(fontSize: 12, color: Colors.black87))).toList(),
+                    runSpacing: 4,
+                    children: r.expenses.map((e) => Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(6)),
+                      child: Text('${e.personName}: ¥${e.amount.toStringAsFixed(2)}', style: TextStyle(fontSize: 12, color: Colors.indigo.shade900, fontWeight: FontWeight.bold)),
+                    )).toList(),
                   ),
                 ],
               ),

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/ledger_models.dart';
 import '../models/app_settings.dart';
 import 'database_service.dart';
@@ -59,6 +60,23 @@ class LedgerProvider extends ChangeNotifier {
     _aliasRules = await _db.getAliasRules();
     await _refreshAvailableYearsAndMonths();
 
+    // 读取上次退出时保存的年份与月份，保持界面状态一致
+    final prefs = await SharedPreferences.getInstance();
+    final savedYear = prefs.getInt('last_selected_year');
+    final savedMonth = prefs.getInt('last_selected_month_num');
+
+    if (savedYear != null) {
+      if (!_availableYears.contains(savedYear)) {
+        _availableYears.add(savedYear);
+        _availableYears.sort((a, b) => b.compareTo(a));
+      }
+      _selectedYear = savedYear;
+    }
+
+    if (savedMonth != null && savedMonth >= 1 && savedMonth <= 12) {
+      _selectedMonthNum = savedMonth;
+    }
+
     await reloadStatsAndRecords();
 
     _isLoading = false;
@@ -83,14 +101,22 @@ class LedgerProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _persistSelectedDateState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_selected_year', _selectedYear);
+    await prefs.setInt('last_selected_month_num', _selectedMonthNum);
+  }
+
   Future<void> setSelectedYear(int year) async {
     _selectedYear = year;
+    await _persistSelectedDateState();
     await _refreshAvailableYearsAndMonths();
     await reloadStatsAndRecords();
   }
 
   Future<void> setSelectedMonthNum(int monthNum) async {
     _selectedMonthNum = monthNum;
+    await _persistSelectedDateState();
     await reloadStatsAndRecords();
   }
 
@@ -99,6 +125,7 @@ class LedgerProvider extends ChangeNotifier {
       final parts = month.split('-');
       _selectedYear = int.tryParse(parts[0]) ?? _selectedYear;
       _selectedMonthNum = int.tryParse(parts[1]) ?? _selectedMonthNum;
+      await _persistSelectedDateState();
     }
     await reloadStatsAndRecords();
   }
@@ -129,6 +156,7 @@ class LedgerProvider extends ChangeNotifier {
       if (parts.length >= 2) {
         _selectedYear = int.tryParse(parts[0]) ?? _selectedYear;
         _selectedMonthNum = int.tryParse(parts[1]) ?? _selectedMonthNum;
+        await _persistSelectedDateState();
       }
     }
     await _refreshAvailableYearsAndMonths();
@@ -144,6 +172,7 @@ class LedgerProvider extends ChangeNotifier {
       if (parts.length >= 2) {
         _selectedYear = int.tryParse(parts[0]) ?? _selectedYear;
         _selectedMonthNum = int.tryParse(parts[1]) ?? _selectedMonthNum;
+        await _persistSelectedDateState();
       }
     }
     await _refreshAvailableYearsAndMonths();
